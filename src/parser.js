@@ -131,7 +131,7 @@ function renderExecutionBadge(messageElement, executedList) {
                         : JSON.stringify(item.result.result, null, 2);
                     const msg = `[A助手·数据回传: ${item.toolName}]\n${textPayload}`;
                     
-                    await sendNarratorMessage({ compact: true }, msg);
+                    await sendNarratorMessage({ compact: 'true' }, msg);
                     toastr.success('已回传数据，AI 正在继续生成...');
                     feedBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
                     await Generate('normal');
