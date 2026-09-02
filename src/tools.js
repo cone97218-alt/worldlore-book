@@ -658,6 +658,8 @@ export const TOOL_DEFINITIONS = [
 ];
 
 export function registerAllToolsWithToolManager() {
+    const settings = getSettings();
+    if (settings.toolMode !== 'native') return; // text mode: do not register with ToolManager
     if (ToolManager && typeof ToolManager.registerFunctionTool === 'function') {
         for (const tool of TOOL_DEFINITIONS) {
             try {
@@ -672,16 +674,45 @@ export function registerAllToolsWithToolManager() {
                 console.warn(`[Worldlore Agent] Could not register tool ${tool.name} with ToolManager:`, e);
             }
         }
-        console.log('[Worldlore Agent] Registered all tools with ST ToolManager');
+        console.log('[Worldlore Agent] Registered all tools with ST ToolManager (native mode)');
     }
 }
 
+export function unregisterAllTools() {
+    if (ToolManager && typeof ToolManager.unregisterFunctionTool === 'function') {
+        for (const tool of TOOL_DEFINITIONS) {
+            try { ToolManager.unregisterFunctionTool(tool.name); } catch (_) {}
+        }
+        console.log('[Worldlore Agent] Unregistered all tools from ST ToolManager');
+    }
+}
+
+/**
+ * Switch tool mode at runtime. 'native' = native Function Calling; 'text' = <agent_action> tags only.
+ * @param {'native'|'text'} mode
+ */
+export function setToolMode(mode) {
+    const settings = getSettings();
+    settings.toolMode = mode;
+    saveWorkspace();
+    if (mode === 'native') {
+        registerAllToolsWithToolManager();
+    } else {
+        unregisterAllTools();
+    }
+    console.log(`[Worldlore Agent] Switched to ${mode.toUpperCase()} mode`);
+}
+
 export function getToolDocumentationPrompt() {
-    return `### A助手 (Worldlore Agent) 工具指令说明
+    const settings = getSettings();
+    const isTextMode = settings.toolMode === 'text';
 
-你可以通过执行动作来在工作区管理设定草稿、查阅不同范围的世界书（角色/聊天/全局/指定书名）、以及向暂存区提交世界书/角色卡/用户描述的修改。
-如果你使用的模型支持原生 Function Calling，可以直接调用对应工具；若使用普通文本模型（如 DeepSeek、Claude、GPT 文本模式等），请在回复末尾附带以下格式的动作标签：
+    const modeHeader = isTextMode
+        ? `### A助手 (Worldlore Agent) 工具指令说明 【文本模式】
 
+\u26a0\ufe0f **当前为文本模式（Text Mode）**：禁止使用原生 Function Calling，所有工具调用必须通过在回复末尾附加 \`<agent_action>\` 标签来执行。
+
+格式：
 \`\`\`xml
 <agent_action name="工具名称">
 {
@@ -691,6 +722,13 @@ export function getToolDocumentationPrompt() {
 </agent_action>
 \`\`\`
 
+多个工具调用时，逐个追加多个标签。**不要在对话正文中复述标签内容。**`
+        : `### A助手 (Worldlore Agent) 工具指令说明 【原生模式】
+
+你可以通过执行动作来在工作区管理设定草稿、查阅不同范围的世界书（角色/聊天/全局/指定书名）、以及向暂存区提交世界书/角色卡/用户描述的修改。
+直接调用对应的原生 Function Calling 工具即可。`;
+
+    const toolList = `
 #### 核心提效规则 (Token Optimization Rules)：
 - **小范围改动优先用 \`workspace_patch\`**：若用户只要求修改几个词、一句话或一个数值，**禁止重写整个草稿文件**。直接用 \`workspace_patch(path, search, replace)\` 传入原文片段与新内容，零全文传输。
 - **禁止重复搬运已存在的草稿**：草稿已在工作区且需同步到世界书时，直接传 \`from_file\`，严禁先 \`workspace_read\` 读出再往 \`content\` 填入。
@@ -725,23 +763,31 @@ export function getToolDocumentationPrompt() {
    - \`enabled\`: (boolean) 开启/关闭
    - \`order\`: (number) 顺序
 
-5. **\`workspace_write\`**：创建/更新工作区草稿文件
+5. **\`workspace_write\`**：创建/更新工作区草稿文件（全量写入，适合新建文件或大幅重构）
    - \`path\`: (string) 路径，例如 "world/magic.md"
    - \`content\`: (string) 正文内容
    - \`mode\`: (string, 可选) "overwrite" | "append" | "create"
 
-6. **\`workspace_read\`**：读取工作区草稿（仅在需要查阅用户手写的未知历史文件时调用）
+6. **\`workspace_patch\`**：工作区差量修改（精准搜索替换，**小改动首选**）
+   - \`path\`: (string) 目标草稿文件相对路径
+   - \`search\`: (string, 必填) 要替换的原始文本片段（精确匹配，含换行与缩进）
+   - \`replace\`: (string, 必填) 替换后的新内容
+   - \`all\`: (boolean, 可选) true=替换所有匹配，false=只替换第一个（默认）
 
-7. **\`workspace_search\`**：在工作区中搜索设定
+7. **\`workspace_read\`**：读取工作区草稿（仅在需要查阅用户手写的未知历史文件时调用）
 
-8. **\`workspace_list\`**：列出工作区草稿列表
+8. **\`workspace_search\`**：在工作区中搜索设定
 
-9. **\`st_read_lorebook\`**：读取已有世界书条目（支持 scope 与 book_name）
+9. **\`workspace_list\`**：列出工作区草稿列表
 
-10. **\`st_get_lorebooks_overview\`**：查看酒馆世界书全景（角色绑定、聊天绑定、全局激活）
+10. **\`st_read_lorebook\`**：读取已有世界书条目（支持 scope 与 book_name）
 
-11. **\`st_get_character\`**：读取当前角色卡全部字段详情
+11. **\`st_get_lorebooks_overview\`**：查看酒馆世界书全景（角色绑定、聊天绑定、全局激活）
 
-12. **\`st_get_persona\`**：读取当前用户的 Persona 设定
+12. **\`st_get_character\`**：读取当前角色卡全部字段详情
+
+13. **\`st_get_persona\`**：读取当前用户的 Persona 设定
 `;
+
+    return modeHeader + '\n' + toolList;
 }

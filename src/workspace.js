@@ -7,6 +7,7 @@ export function getSettings() {
     if (!extension_settings[EXTENSION_NAME]) {
         extension_settings[EXTENSION_NAME] = {
             enabled: true,
+            toolMode: 'native',
             activeProject: 'default',
             projects: {
                 'default': {
@@ -38,6 +39,9 @@ export function getSettings() {
     }
     if (extension_settings[EXTENSION_NAME].enabled === undefined) {
         extension_settings[EXTENSION_NAME].enabled = true;
+    }
+    if (!extension_settings[EXTENSION_NAME].toolMode) {
+        extension_settings[EXTENSION_NAME].toolMode = 'native';
     }
     if (!extension_settings[EXTENSION_NAME].ui) {
         extension_settings[EXTENSION_NAME].ui = {

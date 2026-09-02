@@ -1,5 +1,5 @@
 import { getSettings, saveWorkspace, getProjects, getActiveProjectName, getActiveProject, createProject, switchProject, deleteProject, listFiles, readFile, writeFile, deleteFile, exportProjectData, importProjectData } from './workspace.js';
-import { getStagingEntries, removeStagingEntry, clearStaging, applyStagingEntry, applyAllStaging, getHistoryEntries, undoHistoryRecord, redoHistoryRecord, restageHistoryRecord, clearHistory, getToolDocumentationPrompt } from './tools.js';
+import { getStagingEntries, removeStagingEntry, clearStaging, applyStagingEntry, applyAllStaging, getHistoryEntries, undoHistoryRecord, redoHistoryRecord, restageHistoryRecord, clearHistory, getToolDocumentationPrompt, setToolMode } from './tools.js';
 import { getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview } from './st-sync.js';
 import { Popup } from '/scripts/popup.js';
 
@@ -381,7 +381,19 @@ function createDrawer() {
                         <i class="fa-solid fa-circle-info"></i>
                         <span class="worldlore-nowrap-text">A助手 指南</span>
                     </div>
-                    <p>插件提供纯执行能力与工作区支持。点击下方按钮可一键复制工具定义并粘贴至您的 System Prompt 或预设：</p>
+
+                    <div class="worldlore-section-label worldlore-nowrap-text">工具调用模式</div>
+                    <div class="worldlore-mode-toggle" id="worldlore_mode_toggle">
+                        <button id="worldlore_mode_native_btn" class="menu_button worldlore-mode-btn" title="原生 Function Calling 模式（工具调用走 API 协议，有 Role:tool 历史注入）">
+                            <i class="fa-solid fa-plug"></i>
+                        </button>
+                        <button id="worldlore_mode_text_btn" class="menu_button worldlore-mode-btn" title="文本标签模式（AI 输出 &lt;agent_action&gt; 标签，本地执行，零上下文注入）">
+                            <i class="fa-solid fa-tag"></i>
+                        </button>
+                    </div>
+                    <div id="worldlore_mode_label" class="worldlore-mode-label worldlore-nowrap-text"></div>
+
+                    <p>点击下方按钮可一键复制工具说明并粘贴至 System Prompt 或预设（内容随模式自动更新）：</p>
                     
                     <div class="worldlore-copy-box">
                         <button id="worldlore_copy_prompt_btn" class="menu_button primary fa-solid fa-copy" title="一键复制完整工具说明 (Copy Tool Prompt)"></button>
@@ -539,6 +551,32 @@ function bindEvents() {
             toastr.success('已复制工具提示词说明到剪贴板！');
         });
     });
+
+    // --- TOOL MODE TOGGLE ---
+    const renderModeLabel = () => {
+        const mode = getSettings().toolMode || 'native';
+        const isNative = mode === 'native';
+        $('#worldlore_mode_native_btn').toggleClass('active', isNative);
+        $('#worldlore_mode_text_btn').toggleClass('active', !isNative);
+        $('#worldlore_mode_label').text(isNative
+            ? '原生模式：工具调用走 API 协议'
+            : '文本模式：<agent_action> 标签，零上下文注入');
+    };
+
+    $('#worldlore_mode_native_btn').on('click', () => {
+        setToolMode('native');
+        renderModeLabel();
+        toastr.success('已切换至原生 Function Calling 模式');
+    });
+
+    $('#worldlore_mode_text_btn').on('click', () => {
+        setToolMode('text');
+        renderModeLabel();
+        toastr.success('已切换至文本标签模式，上下文零注入');
+    });
+
+    // Init label on load
+    renderModeLabel();
 
     $('#worldlore_apply_all_btn').on('click', async () => {
         const entries = getStagingEntries();

@@ -834,3 +834,34 @@
         min-height: 220px !important;
     }
 }
+
+/* Tool Mode Toggle */
+.worldlore-mode-toggle {
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
+    margin: 6px 0 4px 0;
+}
+
+.worldlore-mode-btn {
+    flex: 1;
+    padding: 6px 0 !important;
+    font-size: 14px !important;
+    opacity: 0.55;
+    transition: opacity 0.15s, box-shadow 0.15s;
+    border: 1px solid var(--wl-border);
+}
+
+.worldlore-mode-btn.active {
+    opacity: 1;
+    box-shadow: 0 0 0 2px var(--wl-accent);
+    border-color: var(--wl-accent);
+}
+
+.worldlore-mode-label {
+    font-size: 11px;
+    color: var(--wl-text-muted);
+    margin-bottom: 8px;
+    writing-mode: horizontal-tb !important;
+    white-space: nowrap !important;
+}
