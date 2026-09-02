@@ -1150,8 +1150,8 @@ function initQrDraftPicker() {
                     </button>
                 </div>
                 <div class="flex-container flexGap5 alignitemscenter">
-                    <button id="worldlore_qr_mode_btn" class="worldlore-qr-mode-badge" title="切换引用模式：【全文注入】或【仅注入名称】">
-                        <i class="fa-solid fa-file-lines"></i> 全文
+                    <button id="worldlore_qr_mode_btn" class="worldlore-qr-tool-btn" title="切换引用模式：【全文注入】或【仅注入名称】">
+                        <i class="fa-solid fa-file-lines"></i>
                     </button>
                     <button id="worldlore_qr_pin_btn" class="worldlore-qr-tool-btn" title="保留上一轮引用 (发送消息后自动保留此引用标签)">
                         <i class="fa-solid fa-thumbtack"></i>
@@ -1176,13 +1176,13 @@ function initQrDraftPicker() {
         const updateModeBtnState = () => {
             const settings = getSettings();
             const isNameOnly = settings.qrReferenceMode === 'name';
-            modeBtn.classList.toggle('name-only', isNameOnly);
+            modeBtn.classList.toggle('active', isNameOnly);
             modeBtn.innerHTML = isNameOnly
-                ? '<i class="fa-solid fa-tag"></i> 仅名'
-                : '<i class="fa-solid fa-file-lines"></i> 全文';
+                ? '<i class="fa-solid fa-tag"></i>'
+                : '<i class="fa-solid fa-file-lines"></i>';
             modeBtn.setAttribute('title', isNameOnly
-                ? '引用模式：【仅注入名称】(点击切换为【全文注入】)'
-                : '引用模式：【全文注入】(点击切换为【仅注入名称】)');
+                ? '引用模式：当前为【仅注入名称】(点击切换为【全文注入】)'
+                : '引用模式：当前为【全文注入】(点击切换为【仅注入名称】)');
         };
         updateModeBtnState();
 
@@ -1312,7 +1312,7 @@ function renderQrContent(popover, tab) {
         item.innerHTML = `
             <i class="fa-solid fa-${icon}"></i>
             <span class="worldlore-nowrap-text" style="flex: 1;">${label}${subLabel ? ` <small style="opacity:0.65">(${subLabel})</small>` : ''}</span>
-            <span class="worldlore-qr-item-mode-tag" title="以【${isNameOnly ? '全文' : '仅名称'}】模式引用">${isNameOnly ? '仅名' : '全文'}</span>
+            <span class="worldlore-qr-item-mode-tag" title="以【${isNameOnly ? '全文' : '仅名称'}】模式快速引用"><i class="fa-solid fa-${isNameOnly ? 'file-lines' : 'tag'}"></i></span>
         `;
         // Clicking row inserts primary tag
         item.addEventListener('click', (e) => {
