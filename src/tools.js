@@ -1,7 +1,7 @@
 import { getContext } from '/scripts/extensions.js';
 import { ToolManager } from '/scripts/tool-calling.js';
 import { getSettings, saveWorkspace, writeFile, readFile, deleteFile, listFiles, searchFiles } from './workspace.js';
-import { applyWorldInfoEntry, applyCharacterFieldUpdate, applyPersonaFieldUpdate, getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview, readLorebookEntriesScoped, createAndBindWorldInfo, restoreCharacterLorebookBinding } from './st-sync.js';
+import { applyWorldInfoEntry, applyCharacterFieldUpdate, applyPersonaFieldUpdate, getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview, readLorebookEntriesScoped, createAndBindWorldInfo, restoreCharacterLorebookBinding, deleteWorldInfoSafely, restoreDeletedWorldInfo } from './st-sync.js';
 
 export function getStagingEntries() {
     const settings = getSettings();
@@ -175,6 +175,9 @@ export async function undoHistoryRecord(historyId) {
                 previousPrimary: item.beforeState?.previousPrimary,
                 addedAuxBook: item.beforeState?.bindType === 'additional' ? item.target : null
             });
+        } else if (item.action === 'delete_lorebook') {
+            if (!item.beforeState) throw new Error('无世界书删除前备份快照');
+            await restoreDeletedWorldInfo(item.beforeState);
         }
     } else if (item.type === 'character') {
         if (!item.beforeState) throw new Error('无角色修改前快照');
@@ -227,6 +230,8 @@ export async function redoHistoryRecord(historyId) {
                 bind: true,
                 bindType: item.afterState?.bindType || 'primary'
             });
+        } else if (item.action === 'delete_lorebook') {
+            await deleteWorldInfoSafely(item.target);
         }
     } else if (item.type === 'character') {
         if (!item.afterState) throw new Error('无角色快照');
@@ -579,6 +584,59 @@ export const TOOL_DEFINITIONS = [
         }
     },
 
+    {
+        name: 'st_delete_lorebook',
+        displayName: '删除世界书(支持操作日志一键撤回)',
+        description: '从 SillyTavern 中彻底删除指定的世界书文件，并自动解除当前角色卡及其他角色对该世界书的绑定。删除前会自动备份所有条目与绑定快照，支持在操作日志中一键撤回恢复。当用户要求“把世界书xxx删掉”、“删除某某世界书”或“清理当前绑定的世界书”时调用。',
+        parameters: {
+            type: 'object',
+            properties: {
+                book_name: {
+                    type: 'string',
+                    description: '要删除的世界书名称。若留空或未指定，默认自动解析当前选中的角色卡所绑定的主世界书。'
+                },
+                delete_workspace_drafts: {
+                    type: 'boolean',
+                    description: '可选。是否同步删除工作区草稿中对应的同名文件夹或草稿（默认为 false，安全保留草稿文件）。'
+                }
+            }
+        },
+        action: async (args) => {
+            const res = await deleteWorldInfoSafely(args.book_name);
+
+            // Optional: delete workspace drafts if requested
+            let draftSummary = '';
+            if (args.delete_workspace_drafts === true) {
+                const files = listFiles();
+                const matched = files.filter(f => f.path.startsWith(`world/${res.bookName}/`) || f.path === `world/${res.bookName}.md`);
+                matched.forEach(f => deleteFile(f.path));
+                if (matched.length > 0) {
+                    draftSummary = `已同步清理工作区关联的 ${matched.length} 份草稿文件。`;
+                }
+            }
+
+            // Record History for undo/redo
+            addHistoryRecord({
+                type: 'lorebook',
+                action: 'delete_lorebook',
+                target: res.bookName,
+                summary: `删除世界书: 《${res.bookName}》 (含 ${res.entriesCount} 条设定条目)${draftSummary ? `，${draftSummary}` : ''}`,
+                beforeState: res.backup,
+                afterState: {
+                    bookName: res.bookName
+                },
+                canUndo: true,
+            });
+
+            return JSON.stringify({
+                success: true,
+                book_name: res.bookName,
+                entries_backed_up: res.entriesCount,
+                message: `成功删除世界书《${res.bookName}》（原含 ${res.entriesCount} 条条目已自动备份快照，可随时在操作日志中一键撤回恢复）！${draftSummary}`
+            });
+        }
+    },
+
     // --- ST STAGING TOOLS (ZERO-OVERHEAD DIRECT PIPE & AD-HOC) ---
     {
         name: 'stage_lorebook_entry',
@@ -909,7 +967,12 @@ export function getToolDocumentationPrompt() {
    - \`draft_content\`: (string, 可选) 草稿正文内容
    - \`initial_entry\`: (object, 可选) 推送到【待确认审核区】的首条条目（含 comment, content, keys, constant, order, position 等），供用户审核确认后一键同步入库
 
-2. **\`stage_lorebook_entry\`**：暂存世界书条目变更（支持从草稿直通导入）
+2. **\`st_delete_lorebook\`**：彻底删除指定世界书并自动解除绑定（支持操作日志一键撤回恢复）
+   - 当用户要求：“把世界书xxx删掉”、“删除某某世界书”或“清理当前绑定的世界书”时调用。
+   - \`book_name\`: (string, 可选) 要删除的世界书名称（留空默认当前角色绑定的主世界书）
+   - \`delete_workspace_drafts\`: (boolean, 可选, 默认 false) 是否同步删除工作区草稿文件
+
+3. **\`stage_lorebook_entry\`**：暂存世界书条目变更（支持从草稿直通导入）
    - \`comment\`: (string, 必填) 条目标题/备注（索引名）
    - \`action\`: (string, 必填) "add" | "update" | "delete"
    - \`from_file\`: (string, 极力推荐) 直接指定工作区草稿文件相对路径（如 "world/magic.md"），无需传输正文！

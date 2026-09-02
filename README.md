@@ -64,6 +64,7 @@ git clone https://github.com/cone97218-alt/worldlore-book.git worldlore-agent
 
 支持的核心工具包括：
 - **`st_create_and_bind_lorebook`**：新建世界书并自动绑定到当前角色卡（支持草稿与条目一站式注入）；
+- **`st_delete_lorebook`**：彻底删除世界书并自动解绑（支持操作日志一键无损撤回恢复）；
 - **`stage_lorebook_entry`**：暂存世界书条目变更（支持 `from_file` 零 Token 直通）；
 - **`stage_character_field`** / **`stage_persona_field`**：暂存角色与用户设定变更；
 - **`workspace_write`** / **`workspace_patch`** / **`workspace_read`**：工作区草稿管理与精准差量替换；

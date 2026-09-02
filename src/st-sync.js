@@ -2,7 +2,7 @@ import { getContext } from '/scripts/extensions.js';
 import { characters, this_chid, createOrEditCharacter, saveCharacterDebounced, eventSource, event_types, chat_metadata } from '/script.js';
 import { power_user } from '/scripts/power-user.js';
 import { getOrCreatePersonaDescriptor, user_avatar } from '/scripts/personas.js';
-import { world_names, world_info, selected_world_info, loadWorldInfo, saveWorldInfo, reloadEditor, createNewWorldInfo, charUpdatePrimaryWorld, charUpdateAddAuxWorld, setWorldInfoButtonClass } from '/scripts/world-info.js';
+import { world_names, world_info, selected_world_info, loadWorldInfo, saveWorldInfo, reloadEditor, createNewWorldInfo, deleteWorldInfo, charUpdatePrimaryWorld, charUpdateAddAuxWorld, setWorldInfoButtonClass } from '/scripts/world-info.js';
 
 export function getAvailableWorldInfos() {
     return Array.isArray(world_names) ? [...world_names] : [];
@@ -468,6 +468,146 @@ export async function restoreCharacterLorebookBinding({ previousPrimary = null, 
 
     setWorldInfoButtonClass(this_chid);
     eventSource.emit(event_types.CHARACTER_EDITED, { detail: { id: this_chid, character: rawChar } });
+}
+
+/**
+ * Safely deletes a worldbook with full backup for undo.
+ * Unbinds from current character and cleans up auxiliary lists.
+ * 
+ * @param {string} [bookName] - The name of the worldbook to delete. If omitted, uses current character's primary world.
+ * @returns {Promise<{ success: boolean, bookName: string, entriesCount: number, backup: object }>}
+ */
+export async function deleteWorldInfoSafely(bookName) {
+    let targetBook = bookName ? String(bookName).trim() : null;
+
+    const rawChar = (this_chid !== undefined && this_chid !== null && characters[this_chid]) ? characters[this_chid] : null;
+    const charPrimary = rawChar ? (rawChar.data?.extensions?.world || rawChar.world || '') : '';
+
+    if (!targetBook) {
+        if (charPrimary) {
+            targetBook = charPrimary;
+        } else {
+            throw new Error('未指定要删除的世界书名称，且当前角色未绑定任何主世界书！');
+        }
+    }
+
+    if (!Array.isArray(world_names) || !world_names.includes(targetBook)) {
+        throw new Error(`世界书《${targetBook}》不存在或已被删除！当前可用世界书列表: ${world_names.join(', ')}`);
+    }
+
+    // 1. Create full snapshot backup before deletion
+    const fullData = await loadWorldInfo(targetBook);
+    const isPrimaryForCurrentChar = (charPrimary === targetBook);
+    const affectedCharLores = (world_info?.charLore || [])
+        .filter(c => Array.isArray(c.extraBooks) && c.extraBooks.includes(targetBook))
+        .map(c => c.name);
+    const isSelectedInChat = Array.isArray(selected_world_info) && selected_world_info.includes(targetBook);
+
+    const backup = {
+        bookName: targetBook,
+        data: structuredClone(fullData),
+        bindings: {
+            isPrimaryForCurrentChar,
+            characterId: this_chid,
+            affectedCharLores,
+            isSelectedInChat
+        }
+    };
+
+    // 2. Call SillyTavern's native deleteWorldInfo
+    const deleteSuccess = await deleteWorldInfo(targetBook);
+    if (!deleteSuccess) {
+        throw new Error(`删除世界书《${targetBook}》失败，服务器拒绝了删除请求！`);
+    }
+
+    // 3. Clean up any auxiliary lorebook references in world_info.charLore
+    if (affectedCharLores.length > 0 && Array.isArray(world_info?.charLore)) {
+        world_info.charLore.forEach(c => {
+            if (Array.isArray(c.extraBooks)) {
+                c.extraBooks = c.extraBooks.filter(b => b !== targetBook);
+            }
+        });
+        getContext().saveSettingsDebounced();
+    }
+
+    // 4. Update UI button classes & emit events
+    if (this_chid !== undefined && this_chid !== null) {
+        setWorldInfoButtonClass(this_chid);
+    }
+    await eventSource.emit(event_types.WORLDINFO_SETTINGS_UPDATED);
+
+    const entriesCount = Object.keys(fullData?.entries || {}).length;
+    console.log(`[Worldlore Agent] Successfully deleted worldbook 《${targetBook}》 (${entriesCount} entries backed up).`);
+
+    return {
+        success: true,
+        bookName: targetBook,
+        entriesCount,
+        backup
+    };
+}
+
+/**
+ * Restores a deleted worldbook from backup (for Undo operation)
+ * 
+ * @param {object} backup - The backup object created during deleteWorldInfoSafely
+ * @returns {Promise<{ success: boolean, restoredBookName: string }>}
+ */
+export async function restoreDeletedWorldInfo(backup) {
+    if (!backup || !backup.bookName || !backup.data) {
+        throw new Error('无效的世界书还原备份数据！');
+    }
+
+    const { bookName, data, bindings } = backup;
+
+    // 1. Re-create and save the world info file
+    await saveWorldInfo(bookName, data, true);
+
+    // 2. Restore primary binding if it was bound to current character
+    if (bindings?.isPrimaryForCurrentChar && bindings?.characterId !== undefined && characters[bindings.characterId]) {
+        const rawChar = characters[bindings.characterId];
+        $('#form_create').attr('actiontype', 'editcharacter');
+        $('#character_world').val(bookName);
+        if (!rawChar.data) rawChar.data = {};
+        if (!rawChar.data.extensions) rawChar.data.extensions = {};
+        rawChar.data.extensions.world = bookName;
+        rawChar.world = bookName;
+
+        await charUpdatePrimaryWorld(bookName);
+        saveCharacterDebounced();
+        setWorldInfoButtonClass(bindings.characterId);
+    }
+
+    // 3. Restore auxiliary bindings
+    if (Array.isArray(bindings?.affectedCharLores) && bindings.affectedCharLores.length > 0 && Array.isArray(world_info?.charLore)) {
+        bindings.affectedCharLores.forEach(charName => {
+            let entry = world_info.charLore.find(c => c.name === charName);
+            if (!entry) {
+                entry = { name: charName, extraBooks: [] };
+                world_info.charLore.push(entry);
+            }
+            if (Array.isArray(entry.extraBooks) && !entry.extraBooks.includes(bookName)) {
+                entry.extraBooks.push(bookName);
+            }
+        });
+        getContext().saveSettingsDebounced();
+    }
+
+    // 4. Restore chat selection if it was selected
+    if (bindings?.isSelectedInChat && Array.isArray(selected_world_info) && !selected_world_info.includes(bookName)) {
+        selected_world_info.push(bookName);
+        getContext().saveSettingsDebounced();
+    }
+
+    // 5. Reload editor & update UI
+    await reloadEditor();
+    await eventSource.emit(event_types.WORLDINFO_SETTINGS_UPDATED);
+    console.log(`[Worldlore Agent] Restored deleted worldbook 《${bookName}》 from snapshot.`);
+
+    return {
+        success: true,
+        restoredBookName: bookName
+    };
 }
 
 
