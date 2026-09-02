@@ -4,6 +4,7 @@ import { registerAllToolsWithToolManager } from './src/tools.js';
 import { parseAndExecuteActions } from './src/parser.js';
 import { initUI, updateStagingCounter } from './src/ui.js';
 import { initPromptInjector } from './src/injector.js';
+import { initPromptSanitizer } from './src/sanitizer.js';
 
 jQuery(async () => {
     console.log('[Worldlore Agent] Initializing extension A助手...');
@@ -16,6 +17,9 @@ jQuery(async () => {
 
     // 3. Initialize Prompt Reference Injector (dynamically expands [草稿: xxx] into file content for LLM)
     initPromptInjector();
+
+    // 4. Initialize Route A Prompt Context Sanitizer (dynamically strips historical tool calls before sending to API)
+    initPromptSanitizer();
 
     // 3. Listen to message rendering to support Dual-Mode parsing (Text/Tag fallback for DeepSeek, etc.)
     eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, async (messageId) => {

@@ -2,7 +2,7 @@ import { getContext } from '/scripts/extensions.js';
 import { characters, this_chid, createOrEditCharacter, saveCharacterDebounced, eventSource, event_types, chat_metadata } from '/script.js';
 import { power_user } from '/scripts/power-user.js';
 import { getOrCreatePersonaDescriptor, user_avatar } from '/scripts/personas.js';
-import { world_names, world_info, selected_world_info, loadWorldInfo, saveWorldInfo, reloadEditor } from '/scripts/world-info.js';
+import { world_names, world_info, selected_world_info, loadWorldInfo, saveWorldInfo, reloadEditor, createNewWorldInfo, charUpdatePrimaryWorld, charUpdateAddAuxWorld, setWorldInfoButtonClass } from '/scripts/world-info.js';
 
 export function getAvailableWorldInfos() {
     return Array.isArray(world_names) ? [...world_names] : [];
@@ -324,6 +324,152 @@ export async function applyWorldInfoEntry(bookName, entry) {
 
     throw new Error(`Unknown action: ${action}`);
 }
+
+/**
+ * Creates a new world info book and binds it to the current character card
+ * @param {Object} options
+ * @param {string} [options.bookName] - Name of the new world info. If empty, defaults to `${char.name}_世界书`.
+ * @param {boolean} [options.bind=true] - Whether to bind to current character.
+ * @param {'primary'|'additional'} [options.bindType='primary'] - 'primary' or 'additional'.
+ * @param {Array} [options.initialEntries=[]] - Initial world info entries to inject.
+ */
+export async function createAndBindWorldInfo({
+    bookName = '',
+    bind = true,
+    bindType = 'primary',
+    initialEntries = []
+} = {}) {
+    const char = getCurrentCharacter();
+    let finalBookName = String(bookName || '').trim();
+
+    if (!finalBookName) {
+        if (char && char.name) {
+            finalBookName = `${char.name}_世界书`;
+        } else {
+            finalBookName = `世界书_${Date.now().toString(36)}`;
+        }
+    }
+
+    // Clean up filename: remove characters forbidden in filenames
+    finalBookName = finalBookName.replace(/[/\\:*?"<>|]/g, '_').trim();
+
+    // If already exists, generate a non-colliding name
+    let counter = 1;
+    let baseName = finalBookName;
+    while (Array.isArray(world_names) && world_names.includes(finalBookName)) {
+        counter++;
+        finalBookName = `${baseName}_${counter}`;
+    }
+
+    let created = false;
+    try {
+        created = await createNewWorldInfo(finalBookName, { interactive: false });
+    } catch (e) {
+        console.warn('[Worldlore Agent] createNewWorldInfo threw error, attempting fallback:', e);
+    }
+
+    if (!created) {
+        await saveWorldInfo(finalBookName, { entries: {} }, true);
+        if (Array.isArray(world_names) && !world_names.includes(finalBookName)) {
+            world_names.push(finalBookName);
+        }
+    }
+
+    // If initialEntries provided, populate them
+    const addedEntries = [];
+    if (Array.isArray(initialEntries) && initialEntries.length > 0) {
+        for (const entry of initialEntries) {
+            try {
+                const res = await applyWorldInfoEntry(finalBookName, entry);
+                addedEntries.push(res);
+            } catch (err) {
+                console.warn('[Worldlore Agent] Failed to add initial entry:', err);
+            }
+        }
+    }
+
+    let boundSuccess = false;
+    let previousPrimary = null;
+    let previousBound = [];
+
+    if (bind) {
+        if (this_chid === undefined || this_chid === null || !characters[this_chid]) {
+            console.warn('[Worldlore Agent] No character currently selected, cannot bind worldbook');
+        } else {
+            const rawChar = characters[this_chid];
+            previousPrimary = rawChar.data?.extensions?.world || rawChar.world || null;
+            previousBound = getCharacterBoundLorebooks();
+
+            if (bindType === 'additional' || bindType === 'extra') {
+                await charUpdateAddAuxWorld(rawChar.avatar, finalBookName);
+                boundSuccess = true;
+            } else {
+                // Primary bind
+                $('#form_create').attr('actiontype', 'editcharacter');
+                $('#character_world').val(finalBookName);
+                if (!rawChar.data) rawChar.data = {};
+                if (!rawChar.data.extensions) rawChar.data.extensions = {};
+                rawChar.data.extensions.world = finalBookName;
+                rawChar.world = finalBookName;
+
+                await charUpdatePrimaryWorld(finalBookName);
+                saveCharacterDebounced();
+                boundSuccess = true;
+            }
+
+            setWorldInfoButtonClass(this_chid);
+            eventSource.emit(event_types.CHARACTER_EDITED, { detail: { id: this_chid, character: rawChar } });
+        }
+    }
+
+    reloadEditor();
+    eventSource.emit(event_types.WORLDINFO_SETTINGS_UPDATED);
+
+    return {
+        success: true,
+        bookName: finalBookName,
+        bound: boundSuccess,
+        bindType: bind ? bindType : 'none',
+        characterName: char?.name || null,
+        previousPrimary,
+        previousBound,
+        addedEntriesCount: addedEntries.length
+    };
+}
+
+/**
+ * Restores previous character lorebook binding (for undo)
+ */
+export async function restoreCharacterLorebookBinding({ previousPrimary = null, addedAuxBook = null } = {}) {
+    if (this_chid === undefined || this_chid === null || !characters[this_chid]) return;
+    const rawChar = characters[this_chid];
+
+    if (previousPrimary !== undefined) {
+        $('#form_create').attr('actiontype', 'editcharacter');
+        $('#character_world').val(previousPrimary || '');
+        if (!rawChar.data) rawChar.data = {};
+        if (!rawChar.data.extensions) rawChar.data.extensions = {};
+        rawChar.data.extensions.world = previousPrimary || '';
+        rawChar.world = previousPrimary || '';
+
+        await charUpdatePrimaryWorld(previousPrimary || '');
+        saveCharacterDebounced();
+    }
+
+    if (addedAuxBook && rawChar.avatar) {
+        const fileName = rawChar.avatar.replace(/\.[^/.]+$/, '');
+        const charLore = world_info?.charLore;
+        const entry = charLore?.find(e => e.name === fileName);
+        if (entry && Array.isArray(entry.extraBooks)) {
+            entry.extraBooks = entry.extraBooks.filter(b => b !== addedAuxBook);
+            getContext().saveSettingsDebounced();
+        }
+    }
+
+    setWorldInfoButtonClass(this_chid);
+    eventSource.emit(event_types.CHARACTER_EDITED, { detail: { id: this_chid, character: rawChar } });
+}
+
 
 export function getCurrentCharacter() {
     if (this_chid === undefined || this_chid === null || !characters[this_chid]) {

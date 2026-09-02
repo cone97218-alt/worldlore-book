@@ -1,7 +1,7 @@
 import { getContext } from '/scripts/extensions.js';
 import { ToolManager } from '/scripts/tool-calling.js';
 import { getSettings, saveWorkspace, writeFile, readFile, deleteFile, listFiles, searchFiles } from './workspace.js';
-import { applyWorldInfoEntry, applyCharacterFieldUpdate, applyPersonaFieldUpdate, getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview, readLorebookEntriesScoped } from './st-sync.js';
+import { applyWorldInfoEntry, applyCharacterFieldUpdate, applyPersonaFieldUpdate, getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview, readLorebookEntriesScoped, createAndBindWorldInfo, restoreCharacterLorebookBinding } from './st-sync.js';
 
 export function getStagingEntries() {
     const settings = getSettings();
@@ -170,6 +170,11 @@ export async function undoHistoryRecord(historyId) {
         } else if (item.action === 'delete') {
             if (!item.beforeState) throw new Error('无删除前快照数据');
             await applyWorldInfoEntry(item.target, { action: 'add', ...item.beforeState });
+        } else if (item.action === 'create_and_bind') {
+            await restoreCharacterLorebookBinding({
+                previousPrimary: item.beforeState?.previousPrimary,
+                addedAuxBook: item.beforeState?.bindType === 'additional' ? item.target : null
+            });
         }
     } else if (item.type === 'character') {
         if (!item.beforeState) throw new Error('无角色修改前快照');
@@ -216,6 +221,12 @@ export async function redoHistoryRecord(historyId) {
             await applyWorldInfoEntry(item.target, { action: 'update', ...item.afterState });
         } else if (item.action === 'delete') {
             await applyWorldInfoEntry(item.target, { action: 'delete', uid: item.afterState?.uid, comment: item.afterState?.comment });
+        } else if (item.action === 'create_and_bind') {
+            await createAndBindWorldInfo({
+                bookName: item.target,
+                bind: true,
+                bindType: item.afterState?.bindType || 'primary'
+            });
         }
     } else if (item.type === 'character') {
         if (!item.afterState) throw new Error('无角色快照');
@@ -425,6 +436,146 @@ export const TOOL_DEFINITIONS = [
         action: async () => {
             const persona = getCurrentPersona();
             return JSON.stringify(persona);
+        }
+    },
+
+    // --- LOREBOOK CREATION & CHARACTER BINDING TOOLS ---
+    {
+        name: 'st_create_and_bind_lorebook',
+        displayName: '新建世界书并绑定到角色卡',
+        description: '在 SillyTavern 中新建一本世界书并自动绑定到当前角色卡。支持同时打草稿写入工作区文件，并将条目推送至【待同步审核区】供用户审核确认。当用户要求“新建世界书并绑定”、“为本卡建设定集”、“打草稿后注入”时优先使用此工具。',
+        parameters: {
+            type: 'object',
+            properties: {
+                book_name: {
+                    type: 'string',
+                    description: '新世界书名称。若留空或未提供，将自动使用当前角色名（例如: "<角色名>_世界书"）'
+                },
+                bind_to_character: {
+                    type: 'boolean',
+                    description: '是否绑定到当前选中的角色卡。默认为 true'
+                },
+                bind_type: {
+                    type: 'string',
+                    enum: ['primary', 'additional'],
+                    description: '绑定类型：primary (主世界书，默认) 或 additional (附加世界书)'
+                },
+                draft_path: {
+                    type: 'string',
+                    description: '可选。若提供，则同时在工作区草稿中创建该路径的文件（例如: "world/overview.md"）'
+                },
+                draft_content: {
+                    type: 'string',
+                    description: '可选。草稿文件的正文内容（当提供 draft_path 时写入）'
+                },
+                initial_entry: {
+                    type: 'object',
+                    description: '可选。推送到【待确认审核区】的首条条目对象',
+                    properties: {
+                        comment: { type: 'string', description: '条目标题/备注' },
+                        content: { type: 'string', description: '条目内容（若留空且提供了 draft_path/draft_content，将自动引用草稿内容）' },
+                        keys: { type: 'array', items: { type: 'string' }, description: '触发关键词' },
+                        constant: { type: 'boolean', description: 'true=蓝灯(常驻生效无需触发词); false=绿灯(需关键词触发)，默认 true' },
+                        enabled: { type: 'boolean', description: '是否启用条目，默认 true' },
+                        order: { type: 'number', description: '插入顺序优先级，默认 100' },
+                        position: { type: 'number', description: '插入位置 (0=前置角色, 1=后置角色, 2=前置AN, 3=后置AN, 4=按深度插入)' },
+                        depth: { type: 'number', description: '深度插入深度 (默认 4)' }
+                    }
+                }
+            }
+        },
+        action: async (args) => {
+            const bind = args.bind_to_character !== false;
+            const bindType = args.bind_type || 'primary';
+
+            // 1. If draft_path & draft_content provided, write to workspace
+            let writtenDraftPath = null;
+            if (args.draft_path && args.draft_content !== undefined) {
+                writeFile(args.draft_path, args.draft_content, 'overwrite');
+                writtenDraftPath = args.draft_path;
+            }
+
+            // 2. Create world info and bind to character
+            const res = await createAndBindWorldInfo({
+                bookName: args.book_name,
+                bind: bind,
+                bindType: bindType
+            });
+
+            // 3. Push entry to Staging Area (审核区) so the user can review/approve
+            let staged = null;
+            if (args.initial_entry) {
+                const ie = args.initial_entry;
+                const entryContent = ie.content || (args.draft_path ? readFile(args.draft_path) : '') || '';
+                const comment = ie.comment || (args.draft_path ? args.draft_path.split('/').pop().replace(/\.[^/.]+$/, '') : '初始设定');
+                staged = addStagingEntry({
+                    type: 'lorebook',
+                    action: 'add',
+                    target: res.bookName,
+                    data: {
+                        action: 'add',
+                        comment: comment,
+                        keys: ie.keys || [],
+                        secondary_keys: ie.secondary_keys || [],
+                        content: entryContent,
+                        constant: ie.constant !== undefined ? ie.constant : true,
+                        enabled: ie.enabled !== undefined ? ie.enabled : true,
+                        order: ie.order ?? 100,
+                        position: ie.position ?? 0,
+                        depth: ie.depth ?? 4,
+                    },
+                    summary: `[世界书: ${res.bookName}] 新增条目: "${comment}"${args.draft_path ? ` (源于草稿: ${args.draft_path})` : ''}`
+                });
+            } else if (writtenDraftPath && args.draft_content) {
+                const comment = writtenDraftPath.split('/').pop().replace(/\.[^/.]+$/, '');
+                staged = addStagingEntry({
+                    type: 'lorebook',
+                    action: 'add',
+                    target: res.bookName,
+                    data: {
+                        action: 'add',
+                        comment: comment,
+                        keys: [],
+                        secondary_keys: [],
+                        content: args.draft_content,
+                        constant: true,
+                        enabled: true,
+                        order: 100,
+                        position: 0,
+                        depth: 4,
+                    },
+                    summary: `[世界书: ${res.bookName}] 新增条目: "${comment}" (源于草稿: ${writtenDraftPath})`
+                });
+            }
+
+            // 4. Record History for undo/redo
+            addHistoryRecord({
+                type: 'lorebook',
+                action: 'create_and_bind',
+                target: res.bookName,
+                summary: `新建世界书并绑定: 《${res.bookName}》${res.bound ? ` ➔ ${res.characterName || '当前角色'} (${res.bindType === 'additional' ? '附加世界书' : '主世界书'})` : ''}${writtenDraftPath ? ` (附草稿: ${writtenDraftPath})` : ''}`,
+                beforeState: {
+                    previousPrimary: res.previousPrimary,
+                    previousBound: res.previousBound,
+                    bindType: res.bindType
+                },
+                afterState: {
+                    bookName: res.bookName,
+                    bindType: res.bindType
+                },
+                canUndo: true,
+            });
+
+            return JSON.stringify({
+                success: true,
+                book_name: res.bookName,
+                bound_to_character: res.bound,
+                bind_type: res.bindType,
+                character_name: res.characterName,
+                draft_path: writtenDraftPath,
+                staged_id: staged ? staged.id : null,
+                message: `成功新建世界书《${res.bookName}》${res.bound ? `并已绑定为角色 [${res.characterName || '未知'}] 的${res.bindType === 'additional' ? '附加世界书' : '主世界书'}` : ''}！${writtenDraftPath ? `草稿已写入 [${writtenDraftPath}]。` : ''}${staged ? `条目 "${staged.data?.comment}" 已成功推送到【待确认审核区】，请在抽屉暂存区审核应用。` : ''}`
+            });
         }
     },
 
@@ -744,11 +895,21 @@ export function getToolDocumentationPrompt() {
 - **覆盖写入绝不前置读取**：当用户明确要求覆盖写入、或草稿已在工作区中时，**严禁先调用 st_get_character 或 st_read_lorebook 确认现状**！直接调用 stage_character_field 或 stage_lorebook_entry 执行覆盖写入。
 - **小范围改动优先用 \`workspace_patch\`**：若用户只要求修改几个词、一句话或一个数值，**禁止重写整个草稿文件**。直接用 \`workspace_patch(path, search, replace)\` 传入原文片段与新内容，零全文传输。
 - **禁止重复搬运已存在的草稿**：草稿已在工作区且需同步到世界书时，直接传 \`from_file\`，严禁先 \`workspace_read\` 读出再往 \`content\` 填入。
+- **新建世界书并绑定本卡**：当用户要求新建世界书并绑定角色卡、或“先打草稿然后直接注入”时，优先调用 \`st_create_and_bind_lorebook\`。可在参数中同时提供 \`draft_path\`、\`draft_content\` 与 \`initial_entry\` 一站式搞定，或链式调用 \`workspace_write\` 与 \`stage_lorebook_entry\`。
 - **严禁在对话回复中复述长文本**：写入/修改完成后，对话只需简述操作结果（文件名与改动摘要），不打印正文。
 
 #### 可用工具列表：
 
-1. **\`stage_lorebook_entry\`**：暂存世界书条目变更（支持从草稿直通导入）
+1. **\`st_create_and_bind_lorebook\`**：新建世界书并绑定到角色卡（支持草稿与条目一站式注入）
+   - 当用户要求：“新建一个世界书xxx和本卡绑定，生成条目xxxxx，先打草稿然后直接注入”时，直接调用此工具！
+   - \`book_name\`: (string, 可选) 新建世界书名称（留空则默认按当前角色名命名，如 "<角色名>_世界书"）
+   - \`bind_to_character\`: (boolean, 可选, 默认 true) 是否绑定到当前选中的角色卡
+   - \`bind_type\`: (string, 可选, 默认 "primary") "primary" (主世界书) 或 "additional" (附加世界书)
+   - \`draft_path\`: (string, 可选) 工作区草稿文件相对路径（如 "world/timeline.md"），提供时将自动保存到草稿区
+   - \`draft_content\`: (string, 可选) 草稿正文内容
+   - \`initial_entry\`: (object, 可选) 推送到【待确认审核区】的首条条目（含 comment, content, keys, constant, order, position 等），供用户审核确认后一键同步入库
+
+2. **\`stage_lorebook_entry\`**：暂存世界书条目变更（支持从草稿直通导入）
    - \`comment\`: (string, 必填) 条目标题/备注（索引名）
    - \`action\`: (string, 必填) "add" | "update" | "delete"
    - \`from_file\`: (string, 极力推荐) 直接指定工作区草稿文件相对路径（如 "world/magic.md"），无需传输正文！

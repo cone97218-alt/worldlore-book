@@ -7,6 +7,13 @@ import { showDiffModal } from './diff.js';
 
 const toolsMap = new Map(TOOL_DEFINITIONS.map(t => [t.name, t]));
 
+const TOOL_ALIASES = {
+    'create_and_bind_lorebook': 'st_create_and_bind_lorebook',
+    'create_worldbook': 'st_create_and_bind_lorebook',
+    'st_create_lorebook': 'st_create_and_bind_lorebook',
+    'create_lorebook': 'st_create_and_bind_lorebook',
+};
+
 const READ_TOOLS = new Set([
     'st_get_character',
     'st_get_persona',
@@ -49,7 +56,8 @@ export async function parseAndExecuteActions(text, messageElement) {
         try {
             const parsed = JSON.parse(match[1]);
             if (parsed && (parsed.action || parsed.tool)) {
-                const toolName = parsed.action || parsed.tool;
+                const rawName = parsed.action || parsed.tool;
+                const toolName = TOOL_ALIASES[rawName] || rawName;
                 const params = parsed.params || parsed.args || parsed.parameters || parsed;
                 if (toolsMap.has(toolName)) {
                     const res = await executeToolByName(toolName, params);
@@ -69,17 +77,18 @@ export async function parseAndExecuteActions(text, messageElement) {
 }
 
 export async function executeToolByName(name, args) {
-    const tool = toolsMap.get(name);
+    const resolvedName = TOOL_ALIASES[name] || name;
+    const tool = toolsMap.get(resolvedName);
     if (!tool) {
         console.warn(`[Worldlore Agent] Unknown tool called: ${name}`);
         return { success: false, error: `Unknown tool: ${name}` };
     }
     try {
-        console.log(`[Worldlore Agent] Executing tool ${name}:`, args);
+        console.log(`[Worldlore Agent] Executing tool ${resolvedName}:`, args);
         const result = await tool.action(args);
         return { success: true, result };
     } catch (e) {
-        console.error(`[Worldlore Agent] Error executing tool ${name}:`, e);
+        console.error(`[Worldlore Agent] Error executing tool ${resolvedName}:`, e);
         return { success: false, error: e.message };
     }
 }
@@ -94,8 +103,9 @@ function renderExecutionBadge(messageElement, executedList) {
     for (const item of executedList) {
         const badge = document.createElement('div');
         badge.className = `worldlore-badge ${item.result.success ? 'success' : 'error'}`;
-        const iconClass = item.result.success ? 'bolt' : 'triangle-exclamation';
-        const paramSummary = item.params.from_file || item.params.path || item.params.comment || item.params.field || item.params.query || item.params.book_name || item.params.scope || 'executed';
+        const isCreateWi = item.toolName === 'st_create_and_bind_lorebook' || TOOL_ALIASES[item.toolName] === 'st_create_and_bind_lorebook';
+        const iconClass = !item.result.success ? 'triangle-exclamation' : (isCreateWi ? 'book-bookmark' : 'bolt');
+        const paramSummary = item.params.book_name || item.params.from_file || item.params.path || item.params.comment || item.params.field || item.params.query || item.params.scope || 'executed';
 
         badge.innerHTML = `
             <i class="fa-solid fa-${iconClass}"></i>

@@ -60,7 +60,14 @@ git clone https://github.com/cone97218-alt/worldlore-book.git worldlore-agent
 
 ## 🛠️ 工具指令 (Tool Calling) 说明
 
-本插件支持原生 **Function Calling** 以及普通文本模型（如 DeepSeek、Claude、GPT 文本模式等）的 \<agent_action>\ 标签解析。
+本插件支持原生 **Function Calling** 以及普通文本模型（如 DeepSeek、Claude、GPT 文本模式等）的 `<agent_action>` 标签解析。
+
+支持的核心工具包括：
+- **`st_create_and_bind_lorebook`**：新建世界书并自动绑定到当前角色卡（支持草稿与条目一站式注入）；
+- **`stage_lorebook_entry`**：暂存世界书条目变更（支持 `from_file` 零 Token 直通）；
+- **`stage_character_field`** / **`stage_persona_field`**：暂存角色与用户设定变更；
+- **`workspace_write`** / **`workspace_patch`** / **`workspace_read`**：工作区草稿管理与精准差量替换；
+- **`st_read_lorebook`** / **`st_get_lorebooks_overview`**：多范围穿透读取世界书。
 
 在系统提示词 (System Prompt) 中可直接引入工具说明，点击插件抽屉第四栏【提示词指南】即可一键复制完整 Prompt！
 
