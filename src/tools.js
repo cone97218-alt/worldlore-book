@@ -423,19 +423,20 @@ export const TOOL_DEFINITIONS = [
         }
     },
 
-    // --- ST STAGING TOOLS (WRITE / MODIFY WITH CONFIRMATION) ---
+    // --- ST STAGING TOOLS (ZERO-OVERHEAD DIRECT PIPE & AD-HOC) ---
     {
         name: 'stage_lorebook_entry',
-        displayName: '暂存世界书条目变更(支持蓝灯/绿灯/开启/关闭/顺序等)',
-        description: '准备添加、修改或删除一条世界书条目（支持设置蓝灯常驻/绿灯触发constant、条目开启/关闭enabled、排序优先级order、插入位置position、深度depth、次级逻辑selective_logic、触发概率probability等），并推送到暂存区供用户审核。',
+        displayName: '暂存世界书条目变更(支持from_file直接导入/蓝绿灯/顺序等)',
+        description: '准备添加、修改或删除一条世界书条目（支持蓝灯常驻/绿灯触发constant、条目开启/关闭enabled、排序优先级order、插入位置position、深度depth等）。若草稿已在工作区中，请直接提供 from_file 路径（无需重复在 content 中传输长文本），实现零 Token 开销直通暂存！',
         parameters: {
             type: 'object',
             properties: {
                 comment: { type: 'string', description: '条目标题/备注（必填，作为索引名）' },
                 action: { type: 'string', enum: ['add', 'update', 'delete'], description: '操作类型：add (新增), update (修改), delete (删除)' },
+                from_file: { type: 'string', description: '【推荐】直接引用工作区已有草稿文件路径（如 "world/magic.md"），插件直接读取，无需在 content 中传输全文！' },
+                content: { type: 'string', description: '条目正文提示词（若未指定 from_file 时使用）' },
                 keys: { type: 'array', items: { type: 'string' }, description: '主触发词列表（如 ["魔法", "咒语"]）' },
                 secondary_keys: { type: 'array', items: { type: 'string' }, description: '次级触发词列表' },
-                content: { type: 'string', description: '世界书条目的正文提示词' },
                 target_book: { type: 'string', description: '目标世界书名称（可选，留空则自动写入当前角色绑定的专属世界书）' },
                 constant: { type: 'boolean', description: '【模式】true=蓝灯(常驻生效无需触发词); false=绿灯(需关键词触发)' },
                 enabled: { type: 'boolean', description: '【开关】true=开启(启用条目); false=关闭(禁用条目)' },
@@ -444,13 +445,20 @@ export const TOOL_DEFINITIONS = [
                 depth: { type: 'number', description: '【插入深度】当 position=4 时的插入深度 (默认 4)' },
                 role: { type: 'number', description: '【插入角色】0=System, 1=User, 2=Assistant' },
                 selective_logic: { type: 'number', description: '【次级逻辑】0=AND ANY, 1=NOT ANY, 2=NOT ALL, 3=AND ALL' },
-                probability: { type: 'number', description: '【触发概率】0~100 (默认 100)' },
-                sticky: { type: 'number', description: '【粘性轮数】触发后保持激活的轮数 (默认 0)' },
-                cooldown: { type: 'number', description: '【冷却轮数】触发后的冷却轮数 (默认 0)' }
+                probability: { type: 'number', description: '【触发概率】0~100 (默认 100)' }
             },
             required: ['comment', 'action']
         },
         action: async (args) => {
+            let entryContent = args.content || '';
+            if (args.from_file) {
+                const fileText = readFile(args.from_file);
+                if (fileText === null) {
+                    return JSON.stringify({ success: false, error: `Referenced file not found: ${args.from_file}` });
+                }
+                entryContent = fileText;
+            }
+
             const bound = getCharacterBoundLorebooks();
             const available = getAvailableWorldInfos();
             const targetBook = args.target_book || (bound.length > 0 ? bound[0] : (available.length > 0 ? available[0] : 'default'));
@@ -463,7 +471,7 @@ export const TOOL_DEFINITIONS = [
                     comment: args.comment,
                     keys: args.keys,
                     secondary_keys: args.secondary_keys,
-                    content: args.content,
+                    content: entryContent,
                     constant: args.constant,
                     enabled: args.enabled,
                     disable: args.disable !== undefined ? args.disable : (args.enabled !== undefined ? !args.enabled : undefined),
@@ -476,9 +484,89 @@ export const TOOL_DEFINITIONS = [
                     sticky: args.sticky,
                     cooldown: args.cooldown,
                 },
-                summary: `[世界书: ${targetBook}] ${args.action.toUpperCase()} 条目: "${args.comment}"`
+                summary: `[世界书: ${targetBook}] ${args.action.toUpperCase()} 条目: "${args.comment}"${args.from_file ? ` (源于: ${args.from_file})` : ''}`
             });
-            return JSON.stringify({ success: true, stagedId: staged.id, message: `Staged lorebook entry: ${args.comment} (${args.action}) for [${targetBook}]. Awaiting user confirmation in drawer staging.` });
+            return JSON.stringify({ success: true, stagedId: staged.id, message: `Staged lorebook entry: ${args.comment} (${args.action}) for [${targetBook}] directly${args.from_file ? ` from [${args.from_file}]` : ''}. Awaiting user confirmation in drawer staging.` });
+        }
+    },
+    {
+        name: 'stage_character_field',
+        displayName: '暂存角色卡字段修改(支持from_file直接导入)',
+        description: '准备修改当前选中的角色卡字段（描述、性格、开场白、对话示例等）。支持通过 from_file 直接导入工作区草稿，推送到待确认暂存区供用户审核。',
+        parameters: {
+            type: 'object',
+            properties: {
+                field: {
+                    type: 'string',
+                    enum: ['description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt'],
+                    description: '要修改的角色卡字段名'
+                },
+                from_file: { type: 'string', description: '【推荐】直接引用工作区已有草稿文件路径，无需传输长文本' },
+                content: { type: 'string', description: '新内容（若未指定 from_file 时使用）' },
+                mode: { type: 'string', enum: ['replace', 'append'], description: '替换或追加，默认为 replace' }
+            },
+            required: ['field']
+        },
+        action: async (args) => {
+            let fieldContent = args.content || '';
+            if (args.from_file) {
+                const fileText = readFile(args.from_file);
+                if (fileText === null) {
+                    return JSON.stringify({ success: false, error: `Referenced file not found: ${args.from_file}` });
+                }
+                fieldContent = fileText;
+            }
+
+            const char = getCurrentCharacter();
+            const charName = char ? char.name : 'Current Character';
+            const staged = addStagingEntry({
+                type: 'character',
+                action: 'update',
+                target: charName,
+                data: {
+                    [args.field]: fieldContent,
+                    mode: args.mode || 'replace'
+                },
+                summary: `[角色卡: ${charName}] 更新字段 "${args.field}" (${args.mode || 'replace'})${args.from_file ? ` (源于: ${args.from_file})` : ''}`
+            });
+            return JSON.stringify({ success: true, stagedId: staged.id, message: `Staged character field update: ${args.field}${args.from_file ? ` from [${args.from_file}]` : ''}. Awaiting user confirmation in drawer staging.` });
+        }
+    },
+    {
+        name: 'stage_persona_field',
+        displayName: '暂存用户描述修改',
+        description: '准备修改当前用户的 Persona 描述，推送到待确认暂存区供用户审核应用。',
+        parameters: {
+            type: 'object',
+            properties: {
+                from_file: { type: 'string', description: '可选。直接引用工作区已有草稿文件路径' },
+                description: { type: 'string', description: '用户人设描述内容' },
+                depth: { type: 'number', description: '插入深度' },
+                position: { type: 'number', description: '插入位置' },
+                mode: { type: 'string', enum: ['replace', 'append'], description: '替换或追加' }
+            }
+        },
+        action: async (args) => {
+            let descContent = args.description || '';
+            if (args.from_file) {
+                const fileText = readFile(args.from_file);
+                if (fileText !== null) descContent = fileText;
+            }
+
+            const persona = getCurrentPersona();
+            const staged = addStagingEntry({
+                type: 'persona',
+                action: 'update',
+                target: persona.name,
+                data: {
+                    description: descContent,
+                    depth: args.depth,
+                    position: args.position,
+                    mode: args.mode || 'replace'
+                },
+                summary: `[用户设定: ${persona.name}] 更新用户描述. Awaiting user confirmation in drawer staging.`
+            });
+            return JSON.stringify({ success: true, stagedId: staged.id, message: `Staged persona description update` });
         }
     },
     {
@@ -520,69 +608,6 @@ export const TOOL_DEFINITIONS = [
             });
             return JSON.stringify({ success: true, stagedId: staged.id, message: `Staged state update for entry "${args.comment}".` });
         }
-    },
-    {
-        name: 'stage_character_field',
-        displayName: '暂存角色卡字段修改',
-        description: '准备修改当前选中的角色卡字段（描述、性格、开场白、对话示例等），推送到待确认暂存区供用户审核应用。',
-        parameters: {
-            type: 'object',
-            properties: {
-                field: {
-                    type: 'string',
-                    enum: ['description', 'personality', 'scenario', 'first_mes', 'mes_example', 'creator_notes', 'system_prompt'],
-                    description: '要修改的角色卡字段名'
-                },
-                content: { type: 'string', description: '新内容' },
-                mode: { type: 'string', enum: ['replace', 'append'], description: '替换或追加，默认为 replace' }
-            },
-            required: ['field', 'content']
-        },
-        action: async (args) => {
-            const char = getCurrentCharacter();
-            const charName = char ? char.name : 'Current Character';
-            const staged = addStagingEntry({
-                type: 'character',
-                action: 'update',
-                target: charName,
-                data: {
-                    [args.field]: args.content,
-                    mode: args.mode || 'replace'
-                },
-                summary: `[角色卡: ${charName}] 更新字段 "${args.field}" (${args.mode || 'replace'})`
-            });
-            return JSON.stringify({ success: true, stagedId: staged.id, message: `Staged character field update: ${args.field}. Awaiting user confirmation in drawer staging.` });
-        }
-    },
-    {
-        name: 'stage_persona_field',
-        displayName: '暂存用户描述修改',
-        description: '准备修改当前用户的 Persona 描述，推送到待确认暂存区供用户审核应用。',
-        parameters: {
-            type: 'object',
-            properties: {
-                description: { type: 'string', description: '用户人设描述内容' },
-                depth: { type: 'number', description: '插入深度' },
-                position: { type: 'number', description: '插入位置' },
-                mode: { type: 'string', enum: ['replace', 'append'], description: '替换或追加' }
-            }
-        },
-        action: async (args) => {
-            const persona = getCurrentPersona();
-            const staged = addStagingEntry({
-                type: 'persona',
-                action: 'update',
-                target: persona.name,
-                data: {
-                    description: args.description,
-                    depth: args.depth,
-                    position: args.position,
-                    mode: args.mode || 'replace'
-                },
-                summary: `[用户设定: ${persona.name}] 更新用户描述. Awaiting user confirmation in drawer staging.`
-            });
-            return JSON.stringify({ success: true, stagedId: staged.id, message: `Staged persona description update` });
-        }
     }
 ];
 
@@ -606,7 +631,7 @@ export function registerAllToolsWithToolManager() {
 }
 
 export function getToolDocumentationPrompt() {
-    return `### Worldlore Agent 工具指令说明 (Tool Calling Instructions)
+    return `### A助手 (Worldlore Agent) 工具指令说明
 
 你可以通过执行动作来在工作区管理设定草稿、查阅不同范围的世界书（角色/聊天/全局/指定书名）、以及向暂存区提交世界书/角色卡/用户描述的修改。
 如果你使用的模型支持原生 Function Calling，可以直接调用对应工具；若使用普通文本模型（如 DeepSeek、Claude、GPT 文本模式等），请在回复末尾附带以下格式的动作标签：
@@ -620,63 +645,57 @@ export function getToolDocumentationPrompt() {
 </agent_action>
 \`\`\`
 
+#### 核心提效规则 (Token Optimization Rules)：
+- **禁止重复搬运已存在的草稿**：当草稿已写入工作区（如 \`world/magic.md\`）且需要同步至世界书或角色卡时，**直接在 \`stage_lorebook_entry\` 或 \`stage_character_field\` 中传入 \`from_file: "world/magic.md"\`**！
+- 严禁先调用 \`workspace_read\` 读取 2000 字，再把 2000 字打到 \`content\` 参数中。直接传 \`from_file\` 即可实现零 Token 开销直通暂存！
+- **严禁在对话回复中复述长文本**：提交草稿或暂存后，对话只需简述条目名称与参数即可。
+
 #### 可用工具列表：
 
-1. **\`st_read_lorebook\`**：读取已有世界书条目（支持多范围与指定书名）
-   - \`scope\`: (string, 可选) "character" (默认，角色专属书) | "chat" (当前聊天会话书) | "global" (全局常驻书) | "active" (所有当前激活书) | "all" (全部书)
-   - \`book_name\`: (string, 可选) 若想读取某本具体的其他世界书（如 "通用通识"），直接填写此参数即可穿透读取
-   - \`query\`: (string, 可选) 搜索关键词（匹配条目标题、触发词或正文）
-
-2. **\`st_get_lorebooks_overview\`**：查看酒馆世界书全景（角色绑定、聊天绑定、全局激活列表）
-
-3. **\`st_get_character\`**：读取当前角色卡全部字段详情（描述、性格、场景、绑定的世界书等）
-
-4. **\`st_get_persona\`**：读取当前用户的 Persona 设定
-
-5. **\`workspace_write\`**：创建/更新工作区草稿文件
-   - \`path\`: (string) 路径，例如 "world/magic.md", "characters/hero.md"
-   - \`content\`: (string) 正文内容
-   - \`mode\`: (string, 可选) "overwrite" | "append" | "create" (默认 "overwrite")
-
-6. **\`workspace_read\`**：读取工作区草稿
-   - \`path\`: (string) 文件相对路径
-
-7. **\`workspace_search\`**：在工作区中搜索设定
-   - \`query\`: (string) 搜索词
-
-8. **\`workspace_list\`**：列出工作区草稿列表
-   - \`prefix\`: (string, 可选) 目录前缀，如 "world/"
-
-9. **\`stage_lorebook_entry\`**：暂存世界书条目变更（支持蓝灯/绿灯/开启/关闭/顺序/深度等全量配置）
-   - \`comment\`: (string) 条目标题/备注（必填，作为索引名）
-   - \`action\`: (string) "add" | "update" | "delete"
-   - \`keys\`: (array of string) 触发词列表，如 ["魔法", "法术"]
-   - \`secondary_keys\`: (array of string, 可选) 次级触发词
-   - \`content\`: (string) 条目正文内容
-   - \`target_book\`: (string, 可选) 目标世界书名字（留空则自动归属当前角色的绑定世界书）
+1. **\`stage_lorebook_entry\`**：暂存世界书条目变更（支持从草稿直通导入）
+   - \`comment\`: (string, 必填) 条目标题/备注（索引名）
+   - \`action\`: (string, 必填) "add" | "update" | "delete"
+   - \`from_file\`: (string, 极力推荐) 直接指定工作区草稿文件相对路径（如 "world/magic.md"），无需传输正文！
+   - \`content\`: (string) 条目正文内容（仅当没有 from_file 时使用）
+   - \`target_book\`: (string, 可选) 目标世界书名（留空默认当前角色绑定世界书）
    - \`constant\`: (boolean, 可选) 【模式】true=蓝灯(常驻生效无需触发词); false=绿灯(需关键词触发)
    - \`enabled\`: (boolean, 可选) 【开关】true=开启(启用条目); false=关闭(禁用条目)
-   - \`order\`: (number, 可选) 【顺序】排序优先级 (数字越大越优先，默认 100)
-   - \`position\`: (number, 可选) 【插入位置】0=前置角色定义, 1=后置角色定义, 2=前置AN, 3=后置AN, 4=按深度插入, 5=前置示例, 6=后置示例
-   - \`depth\`: (number, 可选) 【插入深度】当 position=4 时的插入深度 (默认 4)
-   - \`selective_logic\`: (number, 可选) 【次级逻辑】0=AND ANY, 1=NOT ANY, 2=NOT ALL, 3=AND ALL
-   - \`probability\`: (number, 可选) 【触发概率】0~100 (默认 100)
+   - \`order\`: (number, 可选) 排序优先级 (默认 100)
+   - \`position\`: (number, 可选) 0=前置角色定义, 1=后置角色定义, 2=前置AN, 3=后置AN, 4=按深度插入
+   - \`depth\`: (number, 可选) 当 position=4 时的插入深度 (默认 4)
+   - \`keys\`: (array of string, 可选) 触发词列表
 
-10. **\`st_set_lorebook_entry_state\`**：快速调整世界书条目的蓝灯/绿灯/开启/关闭/顺序
-    - \`comment\`: (string) 条目标题
-    - \`constant\`: (boolean, 可选) true=蓝灯(常驻); false=绿灯(触发)
-    - \`enabled\`: (boolean, 可选) true=开启; false=关闭
-    - \`order\`: (number, 可选) 顺序优先级 (数字越大越靠前)
-    - \`position\`: (number, 可选) 插入位置 (0/1/4)
-    - \`depth\`: (number, 可选) 插入深度
+2. **\`stage_character_field\`**：暂存角色卡字段修改（支持 from_file）
+   - \`field\`: (string, 必填) "description" | "personality" | "scenario" | "first_mes" | "mes_example" | "creator_notes"
+   - \`from_file\`: (string, 极力推荐) 直接指定工作区草稿路径，零 Token 搬运
+   - \`content\`: (string) 内容
+   - \`mode\`: (string, 可选) "replace" | "append" (默认 "replace")
 
-11. **\`stage_character_field\`**：暂存角色卡字段修改（需用户在抽屉审核）
-    - \`field\`: (string) "description" | "personality" | "scenario" | "first_mes" | "mes_example" | "creator_notes"
-    - \`content\`: (string) 内容
-    - \`mode\`: (string, 可选) "replace" | "append" (默认 "replace")
+3. **\`stage_persona_field\`**：暂存用户 Persona 描述修改（支持 from_file）
 
-12. **\`stage_persona_field\`**：暂存用户 Persona 描述修改（需用户在抽屉审核）
-    - \`description\`: (string) 用户人设内容
-    - \`mode\`: (string, 可选) "replace" | "append"
+4. **\`st_set_lorebook_entry_state\`**：快速调整世界书条目的蓝灯/绿灯/开启/关闭/顺序
+   - \`comment\`: (string) 条目标题
+   - \`constant\`: (boolean) 蓝灯/绿灯
+   - \`enabled\`: (boolean) 开启/关闭
+   - \`order\`: (number) 顺序
+
+5. **\`workspace_write\`**：创建/更新工作区草稿文件
+   - \`path\`: (string) 路径，例如 "world/magic.md"
+   - \`content\`: (string) 正文内容
+   - \`mode\`: (string, 可选) "overwrite" | "append" | "create"
+
+6. **\`workspace_read\`**：读取工作区草稿（仅在需要查阅用户手写的未知历史文件时调用）
+
+7. **\`workspace_search\`**：在工作区中搜索设定
+
+8. **\`workspace_list\`**：列出工作区草稿列表
+
+9. **\`st_read_lorebook\`**：读取已有世界书条目（支持 scope 与 book_name）
+
+10. **\`st_get_lorebooks_overview\`**：查看酒馆世界书全景（角色绑定、聊天绑定、全局激活）
+
+11. **\`st_get_character\`**：读取当前角色卡全部字段详情
+
+12. **\`st_get_persona\`**：读取当前用户的 Persona 设定
 `;
 }

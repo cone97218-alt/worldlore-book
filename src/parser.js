@@ -82,7 +82,7 @@ function renderExecutionBadge(messageElement, executedList) {
         badge.className = `worldlore-badge ${item.result.success ? 'success' : 'error'}`;
         badge.innerHTML = `
             <i class="fa-solid fa-${item.result.success ? 'bolt' : 'triangle-exclamation'}"></i>
-            <span><strong>${item.toolName}</strong>: ${item.params.path || item.params.comment || item.params.field || item.params.query || item.params.book_name || item.params.scope || 'executed'}</span>
+            <span><strong>${item.toolName}</strong>: ${item.params.from_file || item.params.path || item.params.comment || item.params.field || item.params.query || item.params.book_name || item.params.scope || 'executed'}</span>
             <span class="badge-status">${item.result.success ? '✓' : '✗'}</span>
         `;
         badgeContainer.appendChild(badge);
