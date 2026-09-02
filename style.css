@@ -1039,6 +1039,8 @@
     min-width: 320px;
     max-width: 920px;
     box-sizing: border-box;
+    text-align: left !important;
+    writing-mode: horizontal-tb !important;
 }
 
 .worldlore-diff-modal-header {
@@ -1049,6 +1051,8 @@
     gap: 10px;
     padding-bottom: 8px;
     border-bottom: 1px solid var(--wl-border, #3e445b);
+    text-align: left !important;
+    writing-mode: horizontal-tb !important;
 }
 
 .worldlore-diff-title i {
@@ -1092,11 +1096,15 @@
 .worldlore-diff-view {
     width: 100%;
     box-sizing: border-box;
+    text-align: left !important;
+    writing-mode: horizontal-tb !important;
 }
 
 .worldlore-diff-pre {
-    white-space: pre-wrap;
-    word-break: break-word;
+    text-align: left !important;
+    writing-mode: horizontal-tb !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
     font-family: monospace, Consolas, Courier;
     font-size: 12.5px;
     line-height: 1.6;
@@ -1137,6 +1145,8 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+    text-align: left !important;
+    writing-mode: horizontal-tb !important;
 }
 
 .worldlore-diff-split-header {
@@ -1148,6 +1158,9 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    text-align: left !important;
+    justify-content: flex-start !important;
+    writing-mode: horizontal-tb !important;
 }
 
 .worldlore-diff-split-col.col-old .worldlore-diff-split-header {

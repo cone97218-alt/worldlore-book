@@ -138,6 +138,7 @@ export function showDiffModal(title, oldText = '', newText = '') {
         wide: true,
         large: true,
         allowVerticalScrolling: true,
+        leftAlign: true,
         okButton: '关闭'
     });
     popup.show();
