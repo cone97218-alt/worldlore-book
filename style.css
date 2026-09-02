@@ -923,8 +923,9 @@
     z-index: 999999;
     display: none;
     flex-direction: column;
-    width: 260px;
-    max-height: 290px;
+    width: 280px;
+    height: auto !important;
+    max-height: 380px;
     background: var(--wl-bg-main, #1b1e2e);
     border: 1px solid var(--wl-border, #3e445b);
     border-radius: 8px;

@@ -1154,6 +1154,8 @@ function initQrDraftPicker() {
                 btn.classList.add('active');
                 currentQrTab = btn.getAttribute('data-tab') || 'drafts';
                 renderQrContent(popover, currentQrTab);
+                const triggerBtn = document.getElementById('worldlore_qr_draft_btn');
+                if (triggerBtn) positionQrPopover(triggerBtn, popover);
             });
         });
     }
@@ -1204,6 +1206,15 @@ function initQrDraftPicker() {
     }
 }
 
+function positionQrPopover(btn, popover) {
+    const rect = btn.getBoundingClientRect();
+    const availableHeightAbove = Math.max(120, rect.top - 20);
+    popover.style.maxHeight = `${Math.min(380, availableHeightAbove)}px`;
+    popover.style.bottom = `${window.innerHeight - rect.top + 6}px`;
+    popover.style.top = 'auto';
+    popover.style.left = `${Math.max(10, Math.min(window.innerWidth - 290, rect.left))}px`;
+}
+
 function toggleQrPopover(btn, popover) {
     if (popover.classList.contains('open')) {
         popover.classList.remove('open');
@@ -1212,13 +1223,7 @@ function toggleQrPopover(btn, popover) {
 
     renderQrContent(popover, currentQrTab);
     popover.classList.add('open');
-
-    // Position popover right above the button
-    const rect = btn.getBoundingClientRect();
-    const popHeight = popover.offsetHeight || 230;
-    const topPos = rect.top - popHeight - 6;
-    popover.style.top = `${Math.max(10, topPos)}px`;
-    popover.style.left = `${Math.max(10, Math.min(window.innerWidth - 270, rect.left))}px`;
+    positionQrPopover(btn, popover);
 }
 
 function renderQrContent(popover, tab) {
