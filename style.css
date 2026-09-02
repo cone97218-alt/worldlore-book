@@ -865,3 +865,36 @@
     writing-mode: horizontal-tb !important;
     white-space: nowrap !important;
 }
+
+/* Badge Feed & Continue Action Button */
+.worldlore-badge-feed-btn {
+    background: transparent !important;
+    border: none !important;
+    color: inherit !important;
+    padding: 0 4px !important;
+    margin-left: 6px !important;
+    cursor: pointer !important;
+    opacity: 0.8;
+    transition: opacity 0.15s, transform 0.15s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px !important;
+    outline: none !important;
+    border-radius: 3px;
+}
+
+.worldlore-badge-feed-btn:hover {
+    opacity: 1 !important;
+    transform: scale(1.25);
+    background: rgba(255, 255, 255, 0.15) !important;
+}
+
+.worldlore-badge-feed-btn:active {
+    transform: scale(0.95);
+}
+
+.worldlore-badge-feed-btn:disabled {
+    cursor: not-allowed !important;
+    opacity: 0.5 !important;
+}

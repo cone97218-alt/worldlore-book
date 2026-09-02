@@ -1,7 +1,18 @@
 import { TOOL_DEFINITIONS } from './tools.js';
 import { getSettings } from './workspace.js';
+import { sendSystemMessage, system_message_types, Generate } from '/script.js';
 
 const toolsMap = new Map(TOOL_DEFINITIONS.map(t => [t.name, t]));
+
+const READ_TOOLS = new Set([
+    'st_get_character',
+    'st_get_persona',
+    'st_read_lorebook',
+    'st_get_lorebooks_overview',
+    'workspace_read',
+    'workspace_search',
+    'workspace_list'
+]);
 
 export async function parseAndExecuteActions(text, messageElement) {
     if (!text || typeof text !== 'string') return [];
@@ -80,11 +91,49 @@ function renderExecutionBadge(messageElement, executedList) {
     for (const item of executedList) {
         const badge = document.createElement('div');
         badge.className = `worldlore-badge ${item.result.success ? 'success' : 'error'}`;
+        const iconClass = item.result.success ? 'bolt' : 'triangle-exclamation';
+        const paramSummary = item.params.from_file || item.params.path || item.params.comment || item.params.field || item.params.query || item.params.book_name || item.params.scope || 'executed';
+
         badge.innerHTML = `
-            <i class="fa-solid fa-${item.result.success ? 'bolt' : 'triangle-exclamation'}"></i>
-            <span><strong>${item.toolName}</strong>: ${item.params.from_file || item.params.path || item.params.comment || item.params.field || item.params.query || item.params.book_name || item.params.scope || 'executed'}</span>
+            <i class="fa-solid fa-${iconClass}"></i>
+            <span><strong>${item.toolName}</strong>: ${paramSummary}</span>
             <span class="badge-status">${item.result.success ? '✓' : '✗'}</span>
         `;
+
+        // If this is a read tool and succeeded, attach a "Feed & Continue" pure FA button
+        if (item.result.success && READ_TOOLS.has(item.toolName)) {
+            const feedBtn = document.createElement('button');
+            feedBtn.className = 'worldlore-badge-feed-btn';
+            feedBtn.setAttribute('title', '将读取结果回传给AI并继续生成');
+            feedBtn.innerHTML = '<i class="fa-solid fa-forward-step"></i>';
+
+            feedBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (feedBtn.disabled) return;
+                feedBtn.disabled = true;
+                feedBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+
+                try {
+                    const textPayload = typeof item.result.result === 'string'
+                        ? item.result.result
+                        : JSON.stringify(item.result.result, null, 2);
+                    const msg = `[A助手·数据回传: ${item.toolName}]\n${textPayload}`;
+                    
+                    sendSystemMessage(system_message_types.NARRATOR, msg, { isSmallSys: true });
+                    toastr.success('已回传数据，AI 正在继续生成...');
+                    feedBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
+                    await Generate('normal');
+                } catch (err) {
+                    console.error('[Worldlore Agent] Error feeding result to AI:', err);
+                    toastr.error('回传失败: ' + err.message);
+                    feedBtn.disabled = false;
+                    feedBtn.innerHTML = '<i class="fa-solid fa-forward-step"></i>';
+                }
+            });
+
+            badge.appendChild(feedBtn);
+        }
+
         badgeContainer.appendChild(badge);
     }
 

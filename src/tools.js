@@ -730,6 +730,7 @@ export function getToolDocumentationPrompt() {
 
     const toolList = `
 #### 核心提效规则 (Token Optimization Rules)：
+- **覆盖写入绝不前置读取**：当用户明确要求覆盖写入、或草稿已在工作区中时，**严禁先调用 st_get_character 或 st_read_lorebook 确认现状**！直接调用 stage_character_field 或 stage_lorebook_entry 执行覆盖写入。
 - **小范围改动优先用 \`workspace_patch\`**：若用户只要求修改几个词、一句话或一个数值，**禁止重写整个草稿文件**。直接用 \`workspace_patch(path, search, replace)\` 传入原文片段与新内容，零全文传输。
 - **禁止重复搬运已存在的草稿**：草稿已在工作区且需同步到世界书时，直接传 \`from_file\`，严禁先 \`workspace_read\` 读出再往 \`content\` 填入。
 - **严禁在对话回复中复述长文本**：写入/修改完成后，对话只需简述操作结果（文件名与改动摘要），不打印正文。
