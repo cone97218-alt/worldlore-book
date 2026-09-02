@@ -130,10 +130,7 @@ export function expandReferencesInText(text) {
     // 2. Clean up <user_input> if present
     cleanedText = cleanedText.replace(/<user_input>([\s\S]*?)<\/user_input>/g, (m, inner) => {
         const trimmed = inner.replace(/^\s*\n+|\n+\s*$/g, '').trim();
-        if (!trimmed) {
-            return '<user_input>\n请参考附加信息。\n</user_input>';
-        }
-        return `<user_input>\n${trimmed}\n</user_input>`;
+        return trimmed ? `<user_input>\n${trimmed}\n</user_input>` : '';
     });
 
     cleanedText = cleanedText.replace(/\n{3,}/g, '\n\n').trim();
@@ -174,10 +171,6 @@ export function stripReferencesAndAddInfo(text) {
 
     cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
 
-    // Fallback: prevent empty message body which triggers 400 errors in Claude/OpenAI
-    if (!cleaned) {
-        return '请参考上述设定。';
-    }
     return cleaned;
 }
 
