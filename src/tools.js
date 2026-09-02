@@ -196,7 +196,11 @@ export async function undoHistoryRecord(historyId) {
             mode: 'replace'
         });
     } else if (item.type === 'workspace') {
-        if (item.beforeState?.content === null || item.beforeState?.content === undefined) {
+        if (item.action === 'delete') {
+            if (item.beforeState?.content !== undefined && item.beforeState?.content !== null) {
+                writeFile(item.target, item.beforeState.content, 'overwrite');
+            }
+        } else if (item.beforeState?.content === null || item.beforeState?.content === undefined) {
             deleteFile(item.target);
         } else {
             writeFile(item.target, item.beforeState.content, 'overwrite');
@@ -250,7 +254,9 @@ export async function redoHistoryRecord(historyId) {
             mode: 'replace'
         });
     } else if (item.type === 'workspace') {
-        if (item.afterState?.content !== undefined) {
+        if (item.action === 'delete') {
+            deleteFile(item.target);
+        } else if (item.afterState?.content !== undefined) {
             writeFile(item.target, item.afterState.content, 'overwrite');
         }
     }
@@ -373,6 +379,44 @@ export const TOOL_DEFINITIONS = [
         action: async (args) => {
             const files = listFiles(args.prefix || '');
             return JSON.stringify({ success: true, count: files.length, files });
+        }
+    },
+    {
+        name: 'workspace_delete',
+        displayName: '工作区删除草稿(支持操作日志一键撤回)',
+        description: '删除工作区中指定的草稿文件。删除前会自动备份文件正文快照，支持在操作日志中一键撤回恢复。当用户要求“把工作区里的xxx草稿删掉”、“删除某某草稿文件”时调用。',
+        parameters: {
+            type: 'object',
+            properties: {
+                path: { type: 'string', description: '要删除的文件相对路径，如 "world/timeline.md"' }
+            },
+            required: ['path']
+        },
+        action: async (args) => {
+            const existing = readFile(args.path);
+            if (existing === null) {
+                return JSON.stringify({ success: false, error: `草稿文件不存在: ${args.path}` });
+            }
+            const deleted = deleteFile(args.path);
+            if (!deleted) {
+                return JSON.stringify({ success: false, error: `删除文件失败: ${args.path}` });
+            }
+
+            addHistoryRecord({
+                type: 'workspace',
+                action: 'delete',
+                target: args.path,
+                summary: `删除工作区草稿: ${args.path} (${existing.length} 字符)`,
+                beforeState: { path: args.path, content: existing },
+                afterState: { path: args.path },
+                canUndo: true,
+            });
+
+            return JSON.stringify({
+                success: true,
+                path: args.path,
+                message: `成功删除工作区草稿 "${args.path}"（已自动备份快照，可在操作日志中一键撤回恢复）。`
+            });
         }
     },
 
@@ -1014,12 +1058,15 @@ export function getToolDocumentationPrompt() {
    - \`mode\`: (string, 可选) "overwrite" | "append" | "create"
 
 6. **\`workspace_patch\`**：工作区差量修改（精准搜索替换，**小改动首选**）
-   - \`path\`: (string) 目标草稿文件相对路径
+   - \`path\`: (string, 必填) 目标草稿文件相对路径
    - \`search\`: (string, 必填) 要替换的原始文本片段（精确匹配，含换行与缩进）
    - \`replace\`: (string, 必填) 替换后的新内容
    - \`all\`: (boolean, 可选) true=替换所有匹配，false=只替换第一个（默认）
 
-7. **\`workspace_read\`**：读取工作区草稿（仅在需要查阅用户手写的未知历史文件时调用）
+7. **\`workspace_delete\`**：删除工作区草稿文件（支持操作日志一键撤回恢复）
+   - \`path\`: (string, 必填) 要删除的草稿相对路径，如 "world/timeline.md"
+
+8. **\`workspace_read\`**：读取工作区草稿（仅在需要查阅用户手写的未知历史文件时调用）
 
 8. **\`workspace_search\`**：在工作区中搜索设定
 

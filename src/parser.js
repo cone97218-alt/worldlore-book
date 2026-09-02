@@ -17,6 +17,10 @@ const TOOL_ALIASES = {
     'st_delete_worldbook': 'st_delete_lorebook',
     'remove_lorebook': 'st_delete_lorebook',
     'st_remove_lorebook': 'st_delete_lorebook',
+    'delete_draft': 'workspace_delete',
+    'delete_file': 'workspace_delete',
+    'remove_draft': 'workspace_delete',
+    'remove_file': 'workspace_delete',
 };
 
 const READ_TOOLS = new Set([
@@ -109,8 +113,8 @@ function renderExecutionBadge(messageElement, executedList) {
         const badge = document.createElement('div');
         badge.className = `worldlore-badge ${item.result.success ? 'success' : 'error'}`;
         const isCreateWi = item.toolName === 'st_create_and_bind_lorebook' || TOOL_ALIASES[item.toolName] === 'st_create_and_bind_lorebook';
-        const isDeleteWi = item.toolName === 'st_delete_lorebook' || TOOL_ALIASES[item.toolName] === 'st_delete_lorebook';
-        const iconClass = !item.result.success ? 'triangle-exclamation' : (isDeleteWi ? 'trash-can' : (isCreateWi ? 'book-bookmark' : 'bolt'));
+        const isDelete = item.toolName === 'st_delete_lorebook' || item.toolName === 'workspace_delete' || TOOL_ALIASES[item.toolName] === 'st_delete_lorebook' || TOOL_ALIASES[item.toolName] === 'workspace_delete';
+        const iconClass = !item.result.success ? 'triangle-exclamation' : (isDelete ? 'trash-can' : (isCreateWi ? 'book-bookmark' : 'bolt'));
         const paramSummary = item.params.book_name || item.params.from_file || item.params.path || item.params.comment || item.params.field || item.params.query || item.params.scope || 'executed';
 
         badge.innerHTML = `

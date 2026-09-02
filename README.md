@@ -67,7 +67,7 @@ git clone https://github.com/cone97218-alt/worldlore-book.git worldlore-agent
 - **`st_delete_lorebook`**：彻底删除世界书并自动解绑（支持操作日志一键无损撤回恢复）；
 - **`stage_lorebook_entry`**：暂存世界书条目变更（支持 `from_file` 零 Token 直通）；
 - **`stage_character_field`** / **`stage_persona_field`**：暂存角色与用户设定变更；
-- **`workspace_write`** / **`workspace_patch`** / **`workspace_read`**：工作区草稿管理与精准差量替换；
+- **`workspace_write`** / **`workspace_patch`** / **`workspace_delete`** / **`workspace_read`**：工作区草稿写入、差量精准替换、安全删除与读取；
 - **`st_read_lorebook`** / **`st_get_lorebooks_overview`**：多范围穿透读取世界书。
 
 在系统提示词 (System Prompt) 中可直接引入工具说明，点击插件抽屉第四栏【提示词指南】即可一键复制完整 Prompt！
