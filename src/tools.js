@@ -608,6 +608,52 @@ export const TOOL_DEFINITIONS = [
             });
             return JSON.stringify({ success: true, stagedId: staged.id, message: `Staged state update for entry "${args.comment}".` });
         }
+    },
+
+    // --- WORKSPACE PATCH: SURGICAL FIND-AND-REPLACE ---
+    {
+        name: 'workspace_patch',
+        displayName: '工作区差量修改（精准搜索替换）',
+        description: '对工作区已有草稿文件进行精准局部修改，只传入要替换的原文片段（search）和新内容（replace），插件直接在文件内原地替换，无需传输全文。适合小范围改动（改名称/调数值/修一句话），彻底杜绝版本滚雪球和全量重写。',
+        parameters: {
+            type: 'object',
+            properties: {
+                path: { type: 'string', description: '目标草稿文件相对路径，如 "world/magic.md"' },
+                search: { type: 'string', description: '要替换的原始文本片段（需精确匹配文件中对应字符，包括换行与缩进）' },
+                replace: { type: 'string', description: '替换后的新文本内容' },
+                all: { type: 'boolean', description: '若为 true，替换文件中所有匹配项；默认 false，只替换第一个匹配' }
+            },
+            required: ['path', 'search', 'replace']
+        },
+        action: async (args) => {
+            const existing = readFile(args.path);
+            if (existing === null) {
+                return JSON.stringify({ success: false, error: `File not found: ${args.path}` });
+            }
+            if (!existing.includes(args.search)) {
+                return JSON.stringify({ success: false, error: `Search text not found in ${args.path}. Verify exact text including whitespace and line breaks.` });
+            }
+            const patched = args.all
+                ? existing.split(args.search).join(args.replace)
+                : existing.replace(args.search, args.replace);
+            writeFile(args.path, patched, 'overwrite');
+            addHistoryRecord({
+                type: 'workspace',
+                action: 'patch',
+                target: args.path,
+                summary: `差量修改: ${args.path} (-${args.search.length}c +${args.replace.length}c)`,
+                beforeState: { content: existing },
+                afterState: { content: patched },
+                canUndo: true,
+            });
+            return JSON.stringify({
+                success: true,
+                path: args.path,
+                removed_chars: args.search.length,
+                added_chars: args.replace.length,
+                delta: args.replace.length - args.search.length
+            });
+        }
     }
 ];
 
@@ -646,9 +692,9 @@ export function getToolDocumentationPrompt() {
 \`\`\`
 
 #### 核心提效规则 (Token Optimization Rules)：
-- **禁止重复搬运已存在的草稿**：当草稿已写入工作区（如 \`world/magic.md\`）且需要同步至世界书或角色卡时，**直接在 \`stage_lorebook_entry\` 或 \`stage_character_field\` 中传入 \`from_file: "world/magic.md"\`**！
-- 严禁先调用 \`workspace_read\` 读取 2000 字，再把 2000 字打到 \`content\` 参数中。直接传 \`from_file\` 即可实现零 Token 开销直通暂存！
-- **严禁在对话回复中复述长文本**：提交草稿或暂存后，对话只需简述条目名称与参数即可。
+- **小范围改动优先用 \`workspace_patch\`**：若用户只要求修改几个词、一句话或一个数值，**禁止重写整个草稿文件**。直接用 \`workspace_patch(path, search, replace)\` 传入原文片段与新内容，零全文传输。
+- **禁止重复搬运已存在的草稿**：草稿已在工作区且需同步到世界书时，直接传 \`from_file\`，严禁先 \`workspace_read\` 读出再往 \`content\` 填入。
+- **严禁在对话回复中复述长文本**：写入/修改完成后，对话只需简述操作结果（文件名与改动摘要），不打印正文。
 
 #### 可用工具列表：
 
