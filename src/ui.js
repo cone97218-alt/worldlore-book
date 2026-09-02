@@ -1,6 +1,7 @@
 import { getSettings, saveWorkspace, getProjects, getActiveProjectName, getActiveProject, createProject, switchProject, deleteProject, listFiles, readFile, writeFile, deleteFile, exportProjectData, importProjectData } from './workspace.js';
 import { getStagingEntries, removeStagingEntry, clearStaging, applyStagingEntry, applyAllStaging, getHistoryEntries, undoHistoryRecord, redoHistoryRecord, restageHistoryRecord, clearHistory, getToolDocumentationPrompt, setToolMode } from './tools.js';
-import { getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview } from './st-sync.js';
+import { getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview, readLorebookEntriesScoped } from './st-sync.js';
+import { eventSource, event_types } from '/script.js';
 import { Popup } from '/scripts/popup.js';
 
 let currentSelectedFile = null;
@@ -212,11 +213,13 @@ export function toggleExtensionEnabled() {
     const ball = document.getElementById('worldlore_floating_ball');
     if (next) {
         if (ball) ball.style.display = 'block';
-        toastr.success('已开启 A助手 (悬浮球已显示)');
+        mountQrDraftButton();
+        toastr.success('已开启 A助手');
     } else {
         if (ball) ball.style.display = 'none';
         toggleDrawer(false);
-        toastr.info('已关闭 A助手 (悬浮球已隐藏)');
+        unmountQrDraftButton();
+        toastr.info('已关闭 A助手');
     }
 
     updateMenuItemState();
@@ -1024,6 +1027,63 @@ function updateStats() {
 }
 
 // --- QR BAR DRAFT PICKER POPOVER ---
+let currentQrTab = 'drafts';
+
+export function unmountQrDraftButton() {
+    const btn = document.getElementById('worldlore_qr_draft_btn');
+    if (btn) btn.remove();
+    const popover = document.getElementById('worldlore_qr_popover');
+    if (popover) popover.classList.remove('open');
+}
+
+export function mountQrDraftButton() {
+    const settings = getSettings();
+    if (settings.enabled === false) {
+        unmountQrDraftButton();
+        return;
+    }
+
+    if (document.getElementById('worldlore_qr_draft_btn')) return;
+
+    const btn = document.createElement('div');
+    btn.id = 'worldlore_qr_draft_btn';
+    btn.className = 'qr--button menu_button fa-solid fa-file-lines worldlore-qr-btn';
+    btn.setAttribute('title', '引用设定 (草稿/角色/用户/世界书)');
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const popover = document.getElementById('worldlore_qr_popover');
+        if (popover) toggleQrPopover(btn, popover);
+    });
+
+    // 1. Mount directly inside the QR buttons container so it sits on the SAME row with sibling icons!
+    const qrButtons = document.querySelector('#qr--bar .qr--buttons:last-of-type') || document.querySelector('#qr--bar .qr--buttons');
+    if (qrButtons) {
+        qrButtons.appendChild(btn);
+        return;
+    }
+
+    // 2. Try inside #qr--bar
+    const qrBar = document.getElementById('qr--bar');
+    if (qrBar) {
+        qrBar.appendChild(btn);
+        return;
+    }
+
+    // 3. Fallback: inside #leftSendForm
+    const leftSendForm = document.getElementById('leftSendForm');
+    if (leftSendForm) {
+        leftSendForm.appendChild(btn);
+        return;
+    }
+
+    // 4. Fallback: inside #send_form
+    const sendForm = document.getElementById('send_form');
+    if (sendForm) {
+        sendForm.appendChild(btn);
+    }
+}
+
 function initQrDraftPicker() {
     // 1. Create Popover container in body
     let popover = document.getElementById('worldlore_qr_popover');
@@ -1034,64 +1094,84 @@ function initQrDraftPicker() {
         popover.setAttribute('data-worldlore-theme', getSettings().ui?.theme || 'default');
         popover.innerHTML = `
             <div class="worldlore-qr-popover-header">
-                <div class="flex-container alignitemscenter flexGap5">
-                    <i class="fa-solid fa-file-lines"></i>
-                    <span class="worldlore-nowrap-text" style="font-weight:600;font-size:12px;">引用草稿</span>
+                <div class="worldlore-qr-tabs flex-container flexGap5">
+                    <button class="worldlore-qr-tab-btn active" data-tab="drafts" title="草稿 (工作区文件)">
+                        <i class="fa-solid fa-file-lines"></i>
+                    </button>
+                    <button class="worldlore-qr-tab-btn" data-tab="character" title="角色 (当前角色卡设定)">
+                        <i class="fa-solid fa-user"></i>
+                    </button>
+                    <button class="worldlore-qr-tab-btn" data-tab="persona" title="用户 (Persona描述)">
+                        <i class="fa-solid fa-user-gear"></i>
+                    </button>
+                    <button class="worldlore-qr-tab-btn" data-tab="lorebook" title="世界书 (已激活条目)">
+                        <i class="fa-solid fa-book"></i>
+                    </button>
                 </div>
-                <button id="worldlore_qr_popover_close" class="worldlore-qr-popover-close fa-solid fa-xmark" title="关闭"></button>
+                <div class="flex-container flexGap5 alignitemscenter">
+                    <button id="worldlore_qr_pin_btn" class="worldlore-qr-tool-btn" title="保留上一轮引用 (发送消息后自动保留此引用标签)">
+                        <i class="fa-solid fa-thumbtack"></i>
+                    </button>
+                    <button id="worldlore_qr_popover_close" class="worldlore-qr-tool-btn" title="关闭">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
             </div>
             <div id="worldlore_qr_list" class="worldlore-qr-list"></div>
         `;
         document.body.appendChild(popover);
 
+        // Wire close button
         popover.querySelector('#worldlore_qr_popover_close').addEventListener('click', (e) => {
             e.stopPropagation();
             popover.classList.remove('open');
         });
-    }
 
-    // 2. Function to mount button into QR bar or send form
-    const mountButton = () => {
-        if (document.getElementById('worldlore_qr_draft_btn')) return;
+        // Wire pin (retain) button
+        const pinBtn = popover.querySelector('#worldlore_qr_pin_btn');
+        const updatePinState = () => {
+            const settings = getSettings();
+            pinBtn.classList.toggle('active', !!settings.retainDraftReference);
+        };
+        updatePinState();
 
-        const btn = document.createElement('div');
-        btn.id = 'worldlore_qr_draft_btn';
-        btn.className = 'menu_button fa-solid fa-file-lines worldlore-qr-btn';
-        btn.setAttribute('title', '引用工作区草稿文件');
-
-        btn.addEventListener('click', (e) => {
+        pinBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            toggleQrPopover(btn, popover);
+            const settings = getSettings();
+            settings.retainDraftReference = !settings.retainDraftReference;
+            saveWorkspace();
+            updatePinState();
+            toastr.success(settings.retainDraftReference
+                ? '已开启：发送消息后自动保留引用标签'
+                : '已关闭：发送后自动清除引用');
         });
 
-        // Try mounting into #qr--bar first
-        const qrBar = document.getElementById('qr--bar');
-        if (qrBar) {
-            qrBar.appendChild(btn);
-            return;
-        }
+        // Wire tab switching
+        popover.querySelectorAll('.worldlore-qr-tab-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                popover.querySelectorAll('.worldlore-qr-tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentQrTab = btn.getAttribute('data-tab') || 'drafts';
+                renderQrContent(popover, currentQrTab);
+            });
+        });
+    }
 
-        // Fallback: inside #leftSendForm
-        const leftSendForm = document.getElementById('leftSendForm');
-        if (leftSendForm) {
-            leftSendForm.appendChild(btn);
-            return;
-        }
+    // 2. Mount immediately if enabled
+    mountQrDraftButton();
 
-        // Fallback: inside #send_form
-        const sendForm = document.getElementById('send_form');
-        if (sendForm) {
-            sendForm.appendChild(btn);
-        }
-    };
-
-    // 3. Mount immediately and observe for re-renders
-    mountButton();
+    // 3. Observe send_form for DOM updates (e.g. character switch or QR reload)
     const sendForm = document.getElementById('send_form');
     if (sendForm) {
         const observer = new MutationObserver(() => {
+            const settings = getSettings();
+            if (settings.enabled === false) {
+                unmountQrDraftButton();
+                return;
+            }
             if (!document.getElementById('worldlore_qr_draft_btn')) {
-                mountButton();
+                mountQrDraftButton();
             }
         });
         observer.observe(sendForm, { childList: true, subtree: true });
@@ -1106,6 +1186,22 @@ function initQrDraftPicker() {
             p.classList.remove('open');
         }
     });
+
+    // 5. Retain reference after message is sent
+    if (eventSource && event_types?.MESSAGE_SENT) {
+        eventSource.on(event_types.MESSAGE_SENT, () => {
+            const settings = getSettings();
+            if (settings.retainDraftReference && settings.lastInjectedReference) {
+                setTimeout(() => {
+                    const ta = document.getElementById('send_textarea');
+                    if (ta && !ta.value.includes(settings.lastInjectedReference)) {
+                        ta.value = `${settings.lastInjectedReference} ${ta.value}`;
+                        ta.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                }, 80);
+            }
+        });
+    }
 }
 
 function toggleQrPopover(btn, popover) {
@@ -1114,56 +1210,145 @@ function toggleQrPopover(btn, popover) {
         return;
     }
 
-    // Render file list
-    const listEl = popover.querySelector('#worldlore_qr_list');
-    const files = listFiles();
-
-    if (!files || files.length === 0) {
-        listEl.innerHTML = '<div class="worldlore-qr-empty worldlore-nowrap-text">工作区暂无草稿</div>';
-    } else {
-        listEl.innerHTML = '';
-        for (const file of files) {
-            const item = document.createElement('div');
-            item.className = 'worldlore-qr-item';
-            item.setAttribute('title', `点击插入 [草稿: ${file.path}]`);
-            item.innerHTML = `
-                <i class="fa-solid fa-file-code"></i>
-                <span class="worldlore-nowrap-text">${file.path}</span>
-            `;
-
-            item.addEventListener('click', (e) => {
-                e.stopPropagation();
-                insertDraftReference(file.path);
-                popover.classList.remove('open');
-            });
-
-            listEl.appendChild(item);
-        }
-    }
-
+    renderQrContent(popover, currentQrTab);
     popover.classList.add('open');
 
     // Position popover right above the button
     const rect = btn.getBoundingClientRect();
-    const popHeight = popover.offsetHeight || 220;
+    const popHeight = popover.offsetHeight || 230;
     const topPos = rect.top - popHeight - 6;
     popover.style.top = `${Math.max(10, topPos)}px`;
-    popover.style.left = `${Math.max(10, Math.min(window.innerWidth - 250, rect.left))}px`;
+    popover.style.left = `${Math.max(10, Math.min(window.innerWidth - 270, rect.left))}px`;
 }
 
-function insertDraftReference(path) {
+function renderQrContent(popover, tab) {
+    const listEl = popover.querySelector('#worldlore_qr_list');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    if (tab === 'drafts') {
+        const files = listFiles();
+        if (!files || files.length === 0) {
+            listEl.innerHTML = '<div class="worldlore-qr-empty worldlore-nowrap-text">工作区暂无草稿</div>';
+            return;
+        }
+        for (const file of files) {
+            const item = document.createElement('div');
+            item.className = 'worldlore-qr-item';
+            item.setAttribute('title', `点击引用 [草稿: ${file.path}]`);
+            item.innerHTML = `
+                <i class="fa-solid fa-file-code"></i>
+                <span class="worldlore-nowrap-text">${file.path}</span>
+            `;
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                insertDraftReference(`[草稿: ${file.path}]`);
+                popover.classList.remove('open');
+            });
+            listEl.appendChild(item);
+        }
+    } else if (tab === 'character') {
+        const char = getCurrentCharacter();
+        if (!char) {
+            listEl.innerHTML = '<div class="worldlore-qr-empty worldlore-nowrap-text">当前未选定角色卡</div>';
+            return;
+        }
+        const charFields = [
+            { key: 'description', label: '角色描述 (Description)' },
+            { key: 'personality', label: '性格特征 (Personality)' },
+            { key: 'scenario', label: '对话场景 (Scenario)' },
+            { key: 'first_mes', label: '首条问候 (First Message)' },
+            { key: 'mes_example', label: '对话样例 (Examples)' },
+        ];
+        for (const f of charFields) {
+            const item = document.createElement('div');
+            item.className = 'worldlore-qr-item';
+            const tag = `[角色设定: ${char.name}.${f.key}]`;
+            item.setAttribute('title', `点击引用 ${tag}`);
+            item.innerHTML = `
+                <i class="fa-solid fa-id-card"></i>
+                <span class="worldlore-nowrap-text">${char.name} · ${f.label}</span>
+            `;
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                insertDraftReference(tag);
+                popover.classList.remove('open');
+            });
+            listEl.appendChild(item);
+        }
+    } else if (tab === 'persona') {
+        const persona = getCurrentPersona();
+        if (!persona) {
+            listEl.innerHTML = '<div class="worldlore-qr-empty worldlore-nowrap-text">未选定用户 Persona</div>';
+            return;
+        }
+        const pFields = [
+            { key: 'description', label: '用户描述 (Description)' },
+        ];
+        for (const f of pFields) {
+            const item = document.createElement('div');
+            item.className = 'worldlore-qr-item';
+            const tag = `[用户设定: ${persona.name || '用户'}.${f.key}]`;
+            item.setAttribute('title', `点击引用 ${tag}`);
+            item.innerHTML = `
+                <i class="fa-solid fa-user-pen"></i>
+                <span class="worldlore-nowrap-text">${persona.name || '用户'} · ${f.label}</span>
+            `;
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                insertDraftReference(tag);
+                popover.classList.remove('open');
+            });
+            listEl.appendChild(item);
+        }
+    } else if (tab === 'lorebook') {
+        let entries = [];
+        try {
+            const res = readLorebookEntriesScoped('active');
+            entries = res?.entries || [];
+        } catch (e) {
+            console.warn('[Worldlore Agent] Could not read active lorebooks:', e);
+        }
+        if (!entries || entries.length === 0) {
+            listEl.innerHTML = '<div class="worldlore-qr-empty worldlore-nowrap-text">当前无激活的世界书条目</div>';
+            return;
+        }
+        for (const entry of entries) {
+            const item = document.createElement('div');
+            item.className = 'worldlore-qr-item';
+            const tag = `[世界书条目: ${entry.book} > ${entry.comment}]`;
+            item.setAttribute('title', `点击引用 ${tag}`);
+            item.innerHTML = `
+                <i class="fa-solid fa-book-bookmark"></i>
+                <span class="worldlore-nowrap-text">${entry.comment || '无备注'} <small style="opacity:0.7">(${entry.book})</small></span>
+            `;
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                insertDraftReference(tag);
+                popover.classList.remove('open');
+            });
+            listEl.appendChild(item);
+        }
+    }
+}
+
+function insertDraftReference(refText) {
     const ta = document.getElementById('send_textarea');
     if (!ta) return;
 
-    const refText = `[草稿: ${path}] `;
+    const toInsert = `${refText} `;
     const start = ta.selectionStart ?? ta.value.length;
     const end = ta.selectionEnd ?? ta.value.length;
     const val = ta.value;
 
-    ta.value = val.substring(0, start) + refText + val.substring(end);
-    ta.selectionStart = ta.selectionEnd = start + refText.length;
+    ta.value = val.substring(0, start) + toInsert + val.substring(end);
+    ta.selectionStart = ta.selectionEnd = start + toInsert.length;
     ta.dispatchEvent(new Event('input', { bubbles: true }));
     ta.focus();
 
-    toastr.info(`已插入草稿引用: ${path}`);
+    const settings = getSettings();
+    settings.lastInjectedReference = refText;
+    saveWorkspace();
+
+    toastr.info(`已插入引用: ${refText}`);
 }
