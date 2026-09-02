@@ -898,3 +898,98 @@
     cursor: not-allowed !important;
     opacity: 0.5 !important;
 }
+
+/* QR Bar Draft Reference Button & Popover */
+.worldlore-qr-btn {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    font-size: 14px !important;
+    opacity: 0.8;
+    transition: opacity 0.15s, transform 0.15s;
+    user-select: none;
+}
+
+.worldlore-qr-btn:hover {
+    opacity: 1 !important;
+    transform: scale(1.1);
+    color: var(--wl-accent, #f39c12);
+}
+
+.worldlore-qr-popover {
+    position: fixed;
+    z-index: 999999;
+    display: none;
+    flex-direction: column;
+    width: 240px;
+    max-height: 280px;
+    background: var(--wl-bg-main, #1b1e2e);
+    border: 1px solid var(--wl-border, #3e445b);
+    border-radius: 8px;
+    box-shadow: 0 6px 20px var(--wl-shadow, rgba(0, 0, 0, 0.6));
+    overflow: hidden;
+    font-size: 13px;
+    color: var(--wl-text-main, #e0e0e0);
+}
+
+.worldlore-qr-popover.open {
+    display: flex;
+}
+
+.worldlore-qr-popover-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--wl-bg-sub, #161926);
+    border-bottom: 1px solid var(--wl-border, #3e445b);
+}
+
+.worldlore-qr-popover-close {
+    background: transparent !important;
+    border: none !important;
+    color: var(--wl-text-muted, #a0a0a0) !important;
+    cursor: pointer !important;
+    font-size: 13px !important;
+    padding: 2px !important;
+}
+
+.worldlore-qr-popover-close:hover {
+    color: var(--wl-accent, #f39c12) !important;
+}
+
+.worldlore-qr-list {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    max-height: 230px;
+    padding: 4px 0;
+}
+
+.worldlore-qr-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 12px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+    user-select: none;
+}
+
+.worldlore-qr-item:hover {
+    background: var(--wl-bg-input, #282c3f);
+    color: var(--wl-accent, #f39c12);
+}
+
+.worldlore-qr-item i {
+    font-size: 13px;
+    opacity: 0.8;
+}
+
+.worldlore-qr-empty {
+    padding: 20px 10px;
+    text-align: center;
+    color: var(--wl-text-muted, #a0a0a0);
+    font-size: 12px;
+}

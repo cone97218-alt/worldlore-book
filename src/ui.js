@@ -29,6 +29,7 @@ export function initUI() {
     createDrawer();
     bindMenuButton();
     bindEvents();
+    initQrDraftPicker();
 }
 
 export function applyTheme(themeName) {
@@ -38,6 +39,8 @@ export function applyTheme(themeName) {
     if (drawer) drawer.setAttribute('data-worldlore-theme', theme);
     const ball = document.getElementById('worldlore_floating_ball');
     if (ball) ball.setAttribute('data-worldlore-theme', theme);
+    const popover = document.getElementById('worldlore_qr_popover');
+    if (popover) popover.setAttribute('data-worldlore-theme', theme);
 
     const settings = getSettings();
     if (settings.ui) settings.ui.theme = theme;
@@ -1018,4 +1021,149 @@ function updateStats() {
     $('#worldlore_stat_char').text(char ? `${char.name} (ID: ${char.id})` : '未选定角色卡');
     $('#worldlore_stat_persona').text(persona ? `${persona.name}` : '默认');
     $('#worldlore_stat_wi').text(bound.length > 0 ? `绑定: ${bound.join(', ')}` : '未绑定专属世界书');
+}
+
+// --- QR BAR DRAFT PICKER POPOVER ---
+function initQrDraftPicker() {
+    // 1. Create Popover container in body
+    let popover = document.getElementById('worldlore_qr_popover');
+    if (!popover) {
+        popover = document.createElement('div');
+        popover.id = 'worldlore_qr_popover';
+        popover.className = 'worldlore-qr-popover';
+        popover.setAttribute('data-worldlore-theme', getSettings().ui?.theme || 'default');
+        popover.innerHTML = `
+            <div class="worldlore-qr-popover-header">
+                <div class="flex-container alignitemscenter flexGap5">
+                    <i class="fa-solid fa-file-lines"></i>
+                    <span class="worldlore-nowrap-text" style="font-weight:600;font-size:12px;">引用草稿</span>
+                </div>
+                <button id="worldlore_qr_popover_close" class="worldlore-qr-popover-close fa-solid fa-xmark" title="关闭"></button>
+            </div>
+            <div id="worldlore_qr_list" class="worldlore-qr-list"></div>
+        `;
+        document.body.appendChild(popover);
+
+        popover.querySelector('#worldlore_qr_popover_close').addEventListener('click', (e) => {
+            e.stopPropagation();
+            popover.classList.remove('open');
+        });
+    }
+
+    // 2. Function to mount button into QR bar or send form
+    const mountButton = () => {
+        if (document.getElementById('worldlore_qr_draft_btn')) return;
+
+        const btn = document.createElement('div');
+        btn.id = 'worldlore_qr_draft_btn';
+        btn.className = 'menu_button fa-solid fa-file-lines worldlore-qr-btn';
+        btn.setAttribute('title', '引用工作区草稿文件');
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleQrPopover(btn, popover);
+        });
+
+        // Try mounting into #qr--bar first
+        const qrBar = document.getElementById('qr--bar');
+        if (qrBar) {
+            qrBar.appendChild(btn);
+            return;
+        }
+
+        // Fallback: inside #leftSendForm
+        const leftSendForm = document.getElementById('leftSendForm');
+        if (leftSendForm) {
+            leftSendForm.appendChild(btn);
+            return;
+        }
+
+        // Fallback: inside #send_form
+        const sendForm = document.getElementById('send_form');
+        if (sendForm) {
+            sendForm.appendChild(btn);
+        }
+    };
+
+    // 3. Mount immediately and observe for re-renders
+    mountButton();
+    const sendForm = document.getElementById('send_form');
+    if (sendForm) {
+        const observer = new MutationObserver(() => {
+            if (!document.getElementById('worldlore_qr_draft_btn')) {
+                mountButton();
+            }
+        });
+        observer.observe(sendForm, { childList: true, subtree: true });
+    }
+
+    // 4. Close popover when clicking outside
+    document.addEventListener('click', (e) => {
+        const p = document.getElementById('worldlore_qr_popover');
+        const b = document.getElementById('worldlore_qr_draft_btn');
+        if (!p || !p.classList.contains('open')) return;
+        if (!p.contains(e.target) && !b?.contains(e.target)) {
+            p.classList.remove('open');
+        }
+    });
+}
+
+function toggleQrPopover(btn, popover) {
+    if (popover.classList.contains('open')) {
+        popover.classList.remove('open');
+        return;
+    }
+
+    // Render file list
+    const listEl = popover.querySelector('#worldlore_qr_list');
+    const files = listFiles();
+
+    if (!files || files.length === 0) {
+        listEl.innerHTML = '<div class="worldlore-qr-empty worldlore-nowrap-text">工作区暂无草稿</div>';
+    } else {
+        listEl.innerHTML = '';
+        for (const file of files) {
+            const item = document.createElement('div');
+            item.className = 'worldlore-qr-item';
+            item.setAttribute('title', `点击插入 [草稿: ${file.path}]`);
+            item.innerHTML = `
+                <i class="fa-solid fa-file-code"></i>
+                <span class="worldlore-nowrap-text">${file.path}</span>
+            `;
+
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                insertDraftReference(file.path);
+                popover.classList.remove('open');
+            });
+
+            listEl.appendChild(item);
+        }
+    }
+
+    popover.classList.add('open');
+
+    // Position popover right above the button
+    const rect = btn.getBoundingClientRect();
+    const popHeight = popover.offsetHeight || 220;
+    const topPos = rect.top - popHeight - 6;
+    popover.style.top = `${Math.max(10, topPos)}px`;
+    popover.style.left = `${Math.max(10, Math.min(window.innerWidth - 250, rect.left))}px`;
+}
+
+function insertDraftReference(path) {
+    const ta = document.getElementById('send_textarea');
+    if (!ta) return;
+
+    const refText = `[草稿: ${path}] `;
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? ta.value.length;
+    const val = ta.value;
+
+    ta.value = val.substring(0, start) + refText + val.substring(end);
+    ta.selectionStart = ta.selectionEnd = start + refText.length;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    ta.focus();
+
+    toastr.info(`已插入草稿引用: ${path}`);
 }
