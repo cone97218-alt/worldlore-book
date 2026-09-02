@@ -301,7 +301,12 @@ export const TOOL_DEFINITIONS = [
                 afterState: { content: readFile(args.path) },
                 canUndo: true,
             });
-            return JSON.stringify({ success: true, message: `Successfully wrote ${res.path} (${res.length} chars)` });
+            return JSON.stringify({
+                success: true,
+                message: `Successfully wrote ${res.path} (${res.length} chars)`,
+                path: res.path,
+                diff: prevContent !== null ? { oldText: prevContent, newText: readFile(args.path) } : null
+            });
         }
     },
     {
@@ -651,7 +656,13 @@ export const TOOL_DEFINITIONS = [
                 path: args.path,
                 removed_chars: args.search.length,
                 added_chars: args.replace.length,
-                delta: args.replace.length - args.search.length
+                delta: args.replace.length - args.search.length,
+                diff: {
+                    oldText: existing,
+                    newText: patched,
+                    search: args.search,
+                    replace: args.replace
+                }
             });
         }
     }

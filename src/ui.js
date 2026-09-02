@@ -3,6 +3,7 @@ import { getStagingEntries, removeStagingEntry, clearStaging, applyStagingEntry,
 import { getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview, readLorebookEntriesScoped } from './st-sync.js';
 import { eventSource, event_types } from '/script.js';
 import { Popup } from '/scripts/popup.js';
+import { showDiffModal } from './diff.js';
 
 let currentSelectedFile = null;
 let lastToggleTime = 0;
@@ -768,6 +769,7 @@ export function renderStagingList() {
                         ${actionBadges[item.action] || ''}
                     </div>
                     <div class="card-actions">
+                        <button class="diff-btn menu_button fa-solid fa-code-compare" title="查看修改对比 (Diff)"></button>
                         <button class="apply-btn menu_button primary fa-solid fa-check" title="应用此项"></button>
                         <button class="discard-btn menu_button fa-solid fa-xmark" title="丢弃此项"></button>
                     </div>
@@ -795,6 +797,31 @@ export function renderStagingList() {
             removeStagingEntry(item.id);
             renderStagingList();
             updateStagingCounter();
+        });
+
+        // View Diff
+        card.find('.diff-btn').on('click', () => {
+            if (item.type === 'lorebook') {
+                const res = readLorebookEntriesScoped('active');
+                const oldEntry = (res?.entries || []).find(e => (!item.data.book || e.book === item.data.book) && e.comment === item.data.comment);
+                const oldText = oldEntry ? (oldEntry.content || '') : '(库中暂无此条目，本次为新增条目)';
+                const newText = item.data.content || (item.data.from_file ? readFile(item.data.from_file) : '') || '';
+                showDiffModal(`世界书条目对比: ${item.data.comment || item.target}`, oldText, newText);
+            } else if (item.type === 'character') {
+                const char = getCurrentCharacter();
+                const fieldKey = Object.keys(item.data || {})[0] || 'description';
+                const oldText = char ? (char[fieldKey] || '(原设定为空)') : '(未选定角色)';
+                const newText = String(item.data[fieldKey] || '');
+                showDiffModal(`角色设定对比: ${char?.name || '角色'}.${fieldKey}`, oldText, newText);
+            } else if (item.type === 'persona') {
+                const persona = getCurrentPersona();
+                const fieldKey = Object.keys(item.data || {})[0] || 'description';
+                const oldText = persona ? (persona[fieldKey] || '(原设定为空)') : '(未选定Persona)';
+                const newText = String(item.data[fieldKey] || '');
+                showDiffModal(`用户设定对比: ${persona?.name || '用户'}.${fieldKey}`, oldText, newText);
+            } else {
+                showDiffModal(`数据对比: ${item.summary || item.target}`, '', JSON.stringify(item.data, null, 2));
+            }
         });
 
         // Interactive Constant Toggle: 蓝灯(常驻) vs 绿灯(触发)
@@ -871,6 +898,8 @@ export function renderHistoryList() {
 
         const timeStr = new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+        const hasDiff = !!(item.beforeState || item.afterState);
+
         const card = $(`
             <div class="worldlore-history-card ${item.undone ? 'is-undone' : ''}">
                 <div class="card-header">
@@ -880,6 +909,9 @@ export function renderHistoryList() {
                     </div>
                     <div class="card-actions">
                         <span class="history-time worldlore-nowrap-text">${timeStr}</span>
+                        ${hasDiff ? `
+                            <button class="diff-btn menu_button fa-solid fa-code-compare" title="查看历史快照对比 (Diff)"></button>
+                        ` : ''}
                         ${!item.undone && item.canUndo ? `
                             <button class="undo-btn menu_button fa-solid fa-rotate-left" title="撤回此项变更"></button>
                         ` : ''}
@@ -892,6 +924,15 @@ export function renderHistoryList() {
                 ${item.undone ? '<div class="history-undone-badge worldlore-nowrap-text"><i class="fa-solid fa-arrow-rotate-left"></i> 已撤回（点击右侧图标可重做或重新暂存）</div>' : ''}
             </div>
         `);
+
+        // Diff action
+        if (hasDiff) {
+            card.find('.diff-btn').on('click', () => {
+                const oldText = typeof item.beforeState?.content === 'string' ? item.beforeState.content : (item.beforeState ? JSON.stringify(item.beforeState, null, 2) : '');
+                const newText = typeof item.afterState?.content === 'string' ? item.afterState.content : (item.afterState ? JSON.stringify(item.afterState, null, 2) : '');
+                showDiffModal(`历史对比: ${item.summary || item.target}`, oldText, newText);
+            });
+        }
 
         // Undo action
         card.find('.undo-btn').on('click', async () => {

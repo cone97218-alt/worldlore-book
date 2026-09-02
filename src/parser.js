@@ -3,6 +3,7 @@ import { getSettings } from './workspace.js';
 import { getContext } from '/scripts/extensions.js';
 import { Generate } from '/script.js';
 import { sendNarratorMessage } from '/scripts/slash-commands.js';
+import { showDiffModal } from './diff.js';
 
 const toolsMap = new Map(TOOL_DEFINITIONS.map(t => [t.name, t]));
 
@@ -101,6 +102,24 @@ function renderExecutionBadge(messageElement, executedList) {
             <span><strong>${item.toolName}</strong>: ${paramSummary}</span>
             <span class="badge-status">${item.result.success ? '✓' : '✗'}</span>
         `;
+
+        // If tool result contains a diff (e.g. workspace_patch or workspace_write modification), attach a Diff button
+        let parsedResult = null;
+        try {
+            parsedResult = typeof item.result.result === 'string' ? JSON.parse(item.result.result) : item.result.result;
+        } catch (_) {}
+
+        if (parsedResult?.diff) {
+            const diffBtn = document.createElement('button');
+            diffBtn.className = 'worldlore-badge-feed-btn';
+            diffBtn.setAttribute('title', '查看修改对比 (Diff)');
+            diffBtn.innerHTML = '<i class="fa-solid fa-code-compare"></i>';
+            diffBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                showDiffModal(`修改对比: ${parsedResult.path || item.params.path || '草稿文件'}`, parsedResult.diff.oldText, parsedResult.diff.newText);
+            });
+            badge.appendChild(diffBtn);
+        }
 
         // If this is a read tool and succeeded, attach a "Feed & Continue" pure FA button
         if (item.result.success && READ_TOOLS.has(item.toolName)) {
