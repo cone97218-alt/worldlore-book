@@ -927,10 +927,23 @@ export function getToolDocumentationPrompt() {
     const settings = getSettings();
     const isTextMode = settings.toolMode === 'text';
 
-    const modeHeader = isTextMode
-        ? `### A助手 (Worldlore Agent) 工具指令说明 【文本模式】
+    if (!isTextMode) {
+        return `### A助手 (Worldlore Agent) 工具调用行为规范 【原生模式】
 
-\u26a0\ufe0f **当前为文本模式（Text Mode）**：禁止使用原生 Function Calling，所有工具调用必须通过在回复末尾附加 \`<agent_action>\` 标签来执行。
+你已具备酒馆原生 Function Calling 工具能力。请根据用户需求直接调用对应的原生工具。
+工具的名称与入参定义已由 API 协议直接提供，请严格遵守以下行为准则：
+
+#### 核心提效与调用规则 (Token Optimization & Calling Rules)：
+- **覆盖写入绝不前置读取**：当用户明确要求覆盖写入、或草稿已在工作区中时，**严禁先调用读取工具确认现状**！直接执行写入。
+- **小范围改动优先用 \`workspace_patch\`**：若用户只要求修改几个词、一句话或一个数值，**禁止重写整个草稿文件**。直接用 \`workspace_patch(path, search, replace)\` 传入原文片段与新内容，零全文传输。
+- **禁止重复搬运已存在的草稿**：草稿已在工作区且需同步到世界书时，直接传 \`from_file\`，严禁先 \`workspace_read\` 读出再往 \`content\` 填入。
+- **新建与删除世界书**：当用户要求新建世界书并绑定角色卡、或“先打草稿然后直接注入”时，优先调用 \`st_create_and_bind_lorebook\`；当用户要求删除世界书时，调用 \`st_delete_lorebook\`。
+- **严禁在对话回复中复述长文本**：写入/修改完成后，对话只需简述操作结果（文件名与改动摘要），不打印正文。`;
+    }
+
+    const modeHeader = `### A助手 (Worldlore Agent) 工具指令说明 【文本模式】
+
+⚠️ **当前为文本模式（Text Mode）**：禁止使用原生 Function Calling，所有工具调用必须通过在回复末尾附加 \`<agent_action>\` 标签来执行。
 
 格式：
 \`\`\`xml
@@ -942,11 +955,7 @@ export function getToolDocumentationPrompt() {
 </agent_action>
 \`\`\`
 
-多个工具调用时，逐个追加多个标签。**不要在对话正文中复述标签内容。**`
-        : `### A助手 (Worldlore Agent) 工具指令说明 【原生模式】
-
-你可以通过执行动作来在工作区管理设定草稿、查阅不同范围的世界书（角色/聊天/全局/指定书名）、以及向暂存区提交世界书/角色卡/用户描述的修改。
-直接调用对应的原生 Function Calling 工具即可。`;
+多个工具调用时，逐个追加多个标签。**不要在对话正文中复述标签内容。**`;
 
     const toolList = `
 #### 核心提效规则 (Token Optimization Rules)：
