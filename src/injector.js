@@ -42,8 +42,8 @@ export function expandReferencesInText(text) {
             if (isNameOnly) {
                 extractedItems.push({
                     fullTag,
-                    header: `[草稿: ${refArg}] (仅引用名称)`,
-                    content: `<referenced_file path="${refArg}" mode="name_only">草稿文件路径: "${refArg}"（注：此处仅引用该草稿名称与路径，未展开正文。若需查阅或修改，请调用对应工具）</referenced_file>`
+                    header: `[草稿: ${refArg}]`,
+                    content: `<referenced_file path="${refArg}" mode="name_only" />`
                 });
             } else {
                 const content = readFile(refArg);
@@ -62,8 +62,8 @@ export function expandReferencesInText(text) {
             if (isNameOnly) {
                 extractedItems.push({
                     fullTag,
-                    header: `[角色设定: ${refArg}] (仅引用名称)`,
-                    content: `<referenced_character_field field="${fieldKey}" mode="name_only">角色设定字段: ${refArg}（仅引用字段名）</referenced_character_field>`
+                    header: `[角色设定: ${refArg}]`,
+                    content: `<referenced_character_field field="${fieldKey}" mode="name_only" />`
                 });
             } else if (char && char[fieldKey] !== undefined && char[fieldKey] !== null) {
                 extractedItems.push({
@@ -79,8 +79,8 @@ export function expandReferencesInText(text) {
             if (isNameOnly) {
                 extractedItems.push({
                     fullTag,
-                    header: `[用户设定: ${refArg}] (仅引用名称)`,
-                    content: `<referenced_persona_field field="${fieldKey}" mode="name_only">用户设定字段: ${refArg}（仅引用字段名）</referenced_persona_field>`
+                    header: `[用户设定: ${refArg}]`,
+                    content: `<referenced_persona_field field="${fieldKey}" mode="name_only" />`
                 });
             } else if (persona && persona[fieldKey] !== undefined && persona[fieldKey] !== null) {
                 extractedItems.push({
@@ -96,8 +96,8 @@ export function expandReferencesInText(text) {
             if (isNameOnly) {
                 extractedItems.push({
                     fullTag,
-                    header: `[世界书条目: ${refArg}] (仅引用名称)`,
-                    content: `<referenced_lorebook_entry ${bookName ? `book="${bookName}" ` : ''}comment="${commentName}" mode="name_only">世界书条目: ${refArg}（仅引用条目名，未展开正文）</referenced_lorebook_entry>`
+                    header: `[世界书条目: ${refArg}]`,
+                    content: `<referenced_lorebook_entry ${bookName ? `book="${bookName}" ` : ''}comment="${commentName}" mode="name_only" />`
                 });
             } else {
                 try {
@@ -151,6 +151,37 @@ export function expandReferencesInText(text) {
 }
 
 /**
+ * Strips both <add-info>...</add-info> and raw reference tags from historical messages,
+ * ensuring references are single-turn only and do NOT persist in future conversation history.
+ * @param {string} text
+ * @returns {string}
+ */
+export function stripReferencesAndAddInfo(text) {
+    if (!text || typeof text !== 'string') return text;
+
+    // 1. Remove previously injected <add-info>...</add-info> block
+    let cleaned = text.replace(/<add-info>[\s\S]*?<\/add-info>\s*/g, '');
+
+    // 2. Remove all reference tags [草稿: ...], [草稿名: ...], etc.
+    const refPattern = /\[(草稿|草稿名|草稿全文|角色设定|角色设定名|角色设定全文|用户设定|用户设定名|用户设定全文|世界书条目|世界书条目名|世界书条目全文):\s*([^\]]+)\]/g;
+    cleaned = cleaned.replace(refPattern, '');
+
+    // 3. Clean up empty <user_input>
+    cleaned = cleaned.replace(/<user_input>([\s\S]*?)<\/user_input>/g, (m, inner) => {
+        const trimmed = inner.replace(/^\s*\n+|\n+\s*$/g, '').trim();
+        return trimmed ? `<user_input>\n${trimmed}\n</user_input>` : '';
+    });
+
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+
+    // Fallback: prevent empty message body which triggers 400 errors in Claude/OpenAI
+    if (!cleaned) {
+        return '请参考上述设定。';
+    }
+    return cleaned;
+}
+
+/**
  * Initializes listeners to dynamically inject referenced content before sending to LLM.
  */
 export function initPromptInjector() {
@@ -161,8 +192,39 @@ export function initPromptInjector() {
             if (settings.enabled === false) return;
             if (!eventData || !Array.isArray(eventData.chat)) return;
 
-            for (const msg of eventData.chat) {
+            const chat = eventData.chat;
+            if (chat.length === 0) return;
+
+            // Find index of the latest user message (active current turn)
+            let lastUserIdx = -1;
+            for (let i = chat.length - 1; i >= 0; i--) {
+                if (chat[i]?.role === 'user') {
+                    lastUserIdx = i;
+                    break;
+                }
+            }
+
+            // A. Historical messages (strictly before lastUserIdx):
+            // Single-turn injection guarantee: strip <add-info> and reference tags from all past turns
+            // so referenced files/names do NOT persist in history!
+            for (let i = 0; i < lastUserIdx; i++) {
+                const msg = chat[i];
                 if (!msg) continue;
+                if (typeof msg.content === 'string') {
+                    msg.content = stripReferencesAndAddInfo(msg.content);
+                } else if (Array.isArray(msg.content)) {
+                    for (const part of msg.content) {
+                        if (part && typeof part.text === 'string') {
+                            part.text = stripReferencesAndAddInfo(part.text);
+                        }
+                    }
+                }
+            }
+
+            // B. Active current turn (lastUserIdx):
+            // Inject references only into the active user message
+            if (lastUserIdx !== -1) {
+                const msg = chat[lastUserIdx];
                 if (typeof msg.content === 'string') {
                     msg.content = expandReferencesInText(msg.content);
                 } else if (Array.isArray(msg.content)) {
