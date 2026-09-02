@@ -1,6 +1,8 @@
 import { TOOL_DEFINITIONS } from './tools.js';
 import { getSettings } from './workspace.js';
-import { sendSystemMessage, system_message_types, Generate } from '/script.js';
+import { getContext } from '/scripts/extensions.js';
+import { Generate } from '/script.js';
+import { sendNarratorMessage } from '/scripts/slash-commands.js';
 
 const toolsMap = new Map(TOOL_DEFINITIONS.map(t => [t.name, t]));
 
@@ -114,12 +116,22 @@ function renderExecutionBadge(messageElement, executedList) {
                 feedBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
                 try {
+                    // Clean up any undefined/null chat items that might have been accidentally created
+                    const context = getContext();
+                    if (Array.isArray(context.chat)) {
+                        for (let i = context.chat.length - 1; i >= 0; i--) {
+                            if (!context.chat[i]) {
+                                context.chat.splice(i, 1);
+                            }
+                        }
+                    }
+
                     const textPayload = typeof item.result.result === 'string'
                         ? item.result.result
                         : JSON.stringify(item.result.result, null, 2);
                     const msg = `[A助手·数据回传: ${item.toolName}]\n${textPayload}`;
                     
-                    sendSystemMessage(system_message_types.NARRATOR, msg, { isSmallSys: true });
+                    await sendNarratorMessage({ compact: true }, msg);
                     toastr.success('已回传数据，AI 正在继续生成...');
                     feedBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
                     await Generate('normal');
