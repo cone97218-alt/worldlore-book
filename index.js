@@ -16,15 +16,15 @@ jQuery(async () => {
     // 2. Register native function tools into SillyTavern ToolManager
     registerAllToolsWithToolManager();
 
-    // 3. Register global macro {{worldlore_tools}} for text mode presets
+    // 3. Register global macro {{worldlore_tools}} for presets
     try {
         if (typeof MacrosParser !== 'undefined' && typeof MacrosParser.registerMacro === 'function') {
             MacrosParser.registerMacro('worldlore_tools', () => {
                 return getTextModeToolsPrompt();
-            }, 'A助手已勾选的文本模式工具列表与调用格式');
+            }, 'A助手当前运行模式下的工具列表与调用格式');
             MacrosParser.registerMacro('worldlore_agent_tools', () => {
                 return getTextModeToolsPrompt();
-            }, 'A助手已勾选的文本模式工具列表与调用格式');
+            }, 'A助手当前运行模式下的工具列表与调用格式');
             console.log('[Worldlore Agent] Registered global macro {{worldlore_tools}}');
         }
     } catch (e) {

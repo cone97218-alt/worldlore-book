@@ -488,17 +488,17 @@ function createDrawer() {
                     </div>
 
                     <!-- 文本模式提示词与全局宏区域（原生模式下彻底隐藏） -->
-                    <div id="worldlore_copy_prompt_section" style="display:none; margin-top:14px;">
-                        <div class="worldlore-section-label worldlore-nowrap-text">文本模式预设宏与提示词</div>
-                        <p style="font-size:12px; opacity:0.85; margin-bottom:8px; line-height:1.5;">
-                            已自动注册酒馆全局宏 <code>{{worldlore_tools}}</code>，可直接在预设任意位置插入！发送时将根据上方勾选的工具实时动态注入。
+                    <div id="worldlore_copy_prompt_section" style="margin-top:14px;">
+                        <div id="worldlore_macro_section_title" class="worldlore-section-label worldlore-nowrap-text">预设宏与提示词</div>
+                        <p id="worldlore_macro_section_desc" style="font-size:12px; opacity:0.85; margin-bottom:8px; line-height:1.5;">
+                            已自动注册酒馆全局宏 <code>{{worldlore_tools}}</code>，可直接在预设任意位置插入！发送时将根据当前模式和勾选工具实时动态注入。
                         </p>
                         <div class="macro-badge-row">
                             <div id="worldlore_copy_macro_btn" class="macro-code-pill" title="点击一键复制宏标记 {{worldlore_tools}}">
                                 <code>{{worldlore_tools}}</code>
                                 <i class="fa-regular fa-copy"></i>
                             </div>
-                            <button id="worldlore_copy_prompt_btn" class="menu_button primary fa-solid fa-file-code" title="一键复制当前勾选工具生成的完整提示词"></button>
+                            <button id="worldlore_copy_prompt_btn" class="menu_button primary fa-solid fa-file-code" title="一键复制当前模式提示词"></button>
                         </div>
                     </div>
 
@@ -919,8 +919,13 @@ function bindEvents() {
 
     $('#worldlore_copy_prompt_btn').on('click', () => {
         const text = getToolDocumentationPrompt(true);
+        if (!text) {
+            toastr.warning('当前未生成提示词（请检查是否勾选了工具或启用了扩展）');
+            return;
+        }
         navigator.clipboard.writeText(text).then(() => {
-            toastr.success('已复制工具提示词说明到剪贴板！');
+            const mode = getSettings().toolMode || 'native';
+            toastr.success(`已复制${mode === 'native' ? '原生模式' : '文本模式'}提示词到剪贴板！`);
         });
     });
 
@@ -938,10 +943,19 @@ function bindEvents() {
         $('#worldlore_mode_text_btn').toggleClass('active', !isNative);
         $('#worldlore_mode_label').text(isNative
             ? '原生模式：工具走原生 API 协议，下方可自定义勾选启用哪些工具'
-            : '文本模式：<agent_action> 标签模式，需复制下方提示词到上下文');
+            : '文本模式：<agent_action> 标签模式，走预设宏文本注入');
 
-        // 原生模式下彻底隐藏提示词复制区域
-        $('#worldlore_copy_prompt_section').toggle(!isNative);
+        // 原生模式与文本模式均显示提示词宏区域
+        $('#worldlore_copy_prompt_section').show();
+        if (isNative) {
+            $('#worldlore_macro_section_title').text('原生模式预设宏与提示词');
+            $('#worldlore_macro_section_desc').html('已自动注册酒馆全局宏 <code>{{worldlore_tools}}</code>，可直接在预设任意位置插入！原生模式下将注入原生 Function Calling 说明提示词。');
+            $('#worldlore_copy_prompt_btn').attr('title', '一键复制原生模式提示词');
+        } else {
+            $('#worldlore_macro_section_title').text('文本模式预设宏与提示词');
+            $('#worldlore_macro_section_desc').html('已自动注册酒馆全局宏 <code>{{worldlore_tools}}</code>，可直接在预设任意位置插入！发送时将根据上方勾选的工具实时动态注入。');
+            $('#worldlore_copy_prompt_btn').attr('title', '一键复制当前勾选工具生成的文本模式完整提示词');
+        }
     };
 
     // --- PRESET IMPORT BUTTON ---

@@ -1689,9 +1689,14 @@ export const TEXT_MODE_TOOL_DEFS = {
 export function getTextModeToolsPrompt(force = false) {
     const settings = getSettings();
     if (!force) {
-        if (settings.enabled === false || settings.toolMode !== 'text') {
+        if (settings.enabled === false) {
             return '';
         }
+    }
+
+    const mode = settings.toolMode || 'native';
+    if (mode === 'native') {
+        return `<tools>\n 模型支持原生Function Calling，你可以直接调用对应工具\n</tools>`;
     }
 
     const writeLines = [];
@@ -1719,14 +1724,15 @@ export function getTextModeToolsPrompt(force = false) {
         return '';
     }
 
-    let out = `<agent_action name="工具名称">\n{\n  "参数1": "值1",\n  "参数2": "值2"\n}\n</agent_action>\n\n\ntool_list:\n`;
+    let body = `<agent_action name="工具名称">\n{\n  "参数1": "值1",\n  "参数2": "值2"\n}\n</agent_action>\n\n\ntool_list:\n`;
     if (writeLines.length > 0) {
-        out += `  write:\n` + writeLines.join('\n') + '\n';
+        body += `  write:\n` + writeLines.join('\n') + '\n';
     }
     if (readLines.length > 0) {
-        out += `  read:\n` + readLines.join('\n') + '\n';
+        body += `  read:\n` + readLines.join('\n') + '\n';
     }
-    return out.trimEnd();
+
+    return `<tools>\n禁止使用原生 Function Calling，所有工具调用必须通过在回复末尾附加 <agent_action> 标签来执行。\n\n${body.trimEnd()}\n</tools>`;
 }
 
 export function getToolDocumentationPrompt(force = false) {
