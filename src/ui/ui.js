@@ -463,6 +463,15 @@ function createDrawer() {
                         <span class="worldlore-nowrap-text">A助手 扩展设置</span>
                     </div>
 
+                    <!-- MOBILE GESTURE & INTERACTION SETTING -->
+                    <div class="worldlore-setting-row" style="display:flex !important; flex-direction:row !important; align-items:center !important; justify-content:space-between !important; margin:6px 0 10px 0 !important; padding:8px 12px !important; background:var(--wl-bg-sub) !important; border:1px solid var(--wl-border) !important; border-radius:6px !important; box-sizing:border-box !important;">
+                        <div style="display:flex; flex-direction:column; gap:2px;">
+                            <span class="worldlore-nowrap-text" style="font-size:12px; font-weight:600;">滑动退出弹窗</span>
+                            <span style="font-size:10px; opacity:0.75;">支持移动端或触屏向右滑动手势快速关闭抽屉</span>
+                        </div>
+                        <input type="checkbox" id="worldlore_swipe_to_close_chk" style="cursor:pointer; width:16px; height:16px; accent-color:var(--wl-accent);" />
+                    </div>
+
                     <!-- PRESET IMPORT -->
                     <div class="worldlore-preset-simple-bar" style="display:flex !important; flex-direction:row !important; align-items:center !important; justify-content:space-between !important; width:100% !important; margin:6px 0 10px 0 !important; box-sizing:border-box !important;">
                         <span class="worldlore-nowrap-text" style="font-size:13px !important; font-weight:600 !important; white-space:nowrap !important; margin:0 !important; line-height:1 !important;">A助手预设</span>
@@ -526,6 +535,63 @@ function createDrawer() {
 function bindEvents() {
     $('#worldlore_drawer_close').on('click', () => toggleDrawer(false));
     $('#worldlore_theme_btn').on('click', cycleTheme);
+
+    // --- MOBILE TOUCH SWIPE TO CLOSE DRAWER ---
+    const currentSettings = getSettings();
+    const swipeChk = $('#worldlore_swipe_to_close_chk');
+    if (swipeChk.length) {
+        swipeChk.prop('checked', currentSettings.ui?.swipeToClose !== false);
+        swipeChk.on('change', function () {
+            const val = $(this).is(':checked');
+            if (!currentSettings.ui) currentSettings.ui = {};
+            currentSettings.ui.swipeToClose = val;
+            saveWorkspace();
+            toastr.info(`滑动退出弹窗已${val ? '开启' : '关闭'}`);
+        });
+    }
+
+    const drawerEl = document.getElementById('worldlore_agent_drawer');
+    if (drawerEl) {
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let isTouching = false;
+        let isFromHeader = false;
+
+        drawerEl.addEventListener('touchstart', (e) => {
+            const s = getSettings();
+            if (s.ui?.swipeToClose === false) return;
+            if (e.touches.length !== 1) return;
+
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            isTouching = true;
+            isFromHeader = !!e.target.closest('.worldlore-drawer-header');
+        }, { passive: true });
+
+        drawerEl.addEventListener('touchend', (e) => {
+            if (!isTouching) return;
+            isTouching = false;
+            const s = getSettings();
+            if (s.ui?.swipeToClose === false) return;
+
+            const touchEndX = e.changedTouches[0].clientX;
+            const touchEndY = e.changedTouches[0].clientY;
+            const deltaX = touchEndX - touchStartX;
+            const deltaY = touchEndY - touchStartY;
+
+            // 1. Right swipe gesture: slide out drawer to the right
+            if (deltaX > 70 && Math.abs(deltaX) > Math.abs(deltaY) * 1.3) {
+                toggleDrawer(false);
+                return;
+            }
+
+            // 2. Header downward swipe gesture
+            if (isFromHeader && deltaY > 60 && Math.abs(deltaY) > Math.abs(deltaX) * 1.2) {
+                toggleDrawer(false);
+                return;
+            }
+        }, { passive: true });
+    }
 
     $('.worldlore-tab-btn').on('click', function () {
         const tab = $(this).data('tab');

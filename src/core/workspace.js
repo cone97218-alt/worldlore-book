@@ -34,6 +34,7 @@ export function getSettings() {
                 ballSide: 'right',
                 theme: 'default',
                 workspacePanelOpen: false,
+                swipeToClose: true,
             },
         };
     }
@@ -42,6 +43,9 @@ export function getSettings() {
     }
     if (!extension_settings[EXTENSION_NAME].toolMode) {
         extension_settings[EXTENSION_NAME].toolMode = 'native';
+    }
+    if (extension_settings[EXTENSION_NAME].ui && extension_settings[EXTENSION_NAME].ui.swipeToClose === undefined) {
+        extension_settings[EXTENSION_NAME].ui.swipeToClose = true;
     }
     if (!extension_settings[EXTENSION_NAME].ui) {
         extension_settings[EXTENSION_NAME].ui = {
