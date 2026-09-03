@@ -7,6 +7,7 @@ import { loadWorldInfo } from '/scripts/world-info.js';
 import { eventSource, event_types } from '/script.js';
 import { Popup, POPUP_TYPE } from '/scripts/popup.js';
 import { showDiffModal } from '../utils/diff.js';
+import { showHtmlPreviewModal, buildIframeDoc, parseRegex, generateMockTextFromRegex } from '../utils/preview.js';
 import { importBundledPresetToSillyTavern } from '../st/preset-sync.js';
 
 /**
@@ -60,6 +61,7 @@ export async function showSelectModal({ title = '请选择', message = '请选�
 }
 
 let currentSelectedFile = null;
+let toggleEditorPreviewMode = null;
 let lastToggleTime = 0;
 let currentFolderFilter = null;
 let expandedFolders = new Set();
@@ -313,7 +315,222 @@ function bindMenuButton() {
     }, 1000);
 }
 
+
+const IN_DRAWER_PREVIEW_INJECTED_CSS = `
+.worldlore-in-drawer-preview {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 !important;
+    min-height: 460px !important;
+    height: 100% !important;
+    width: 100% !important;
+    border: 1px solid var(--wl-border, #3e445b) !important;
+    border-radius: 6px !important;
+    overflow: hidden !important;
+    background: var(--wl-bg-main, #1b1e2e) !important;
+    box-sizing: border-box !important;
+    writing-mode: horizontal-tb !important;
+    direction: ltr !important;
+}
+.in-drawer-preview-toolbar {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 6px 10px !important;
+    background: var(--wl-bg-sub, #161926) !important;
+    border-bottom: 1px solid var(--wl-border, #3e445b) !important;
+    gap: 8px !important;
+    flex-shrink: 0 !important;
+    flex-wrap: nowrap !important;
+    writing-mode: horizontal-tb !important;
+    box-sizing: border-box !important;
+}
+.in-drawer-preview-toolbar * {
+    writing-mode: horizontal-tb !important;
+    direction: ltr !important;
+    white-space: nowrap !important;
+}
+.preview-tb-left,
+.preview-tb-right {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 6px !important;
+    flex-shrink: 0 !important;
+    flex-wrap: nowrap !important;
+}
+.preview-mini-seg {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    background: var(--wl-bg-input, #282c3f) !important;
+    border: 1px solid var(--wl-border, #3e445b) !important;
+    border-radius: 5px !important;
+    padding: 2px !important;
+    gap: 2px !important;
+}
+.preview-mini-seg-btn {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 4px !important;
+    white-space: nowrap !important;
+    padding: 3px 8px !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    height: 24px !important;
+    border-radius: 4px !important;
+    border: none !important;
+    background: transparent !important;
+    color: var(--wl-text-main) !important;
+    opacity: 0.7 !important;
+    cursor: pointer !important;
+    transition: all 0.15s ease !important;
+}
+.preview-mini-seg-btn.active {
+    opacity: 1 !important;
+    background: var(--wl-active-bg, #f39c12) !important;
+    color: var(--wl-active-text, #000) !important;
+    font-weight: 600 !important;
+}
+.preview-tb-btn {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 4px !important;
+    white-space: nowrap !important;
+    padding: 3px 8px !important;
+    font-size: 11px !important;
+    line-height: 1 !important;
+    height: 24px !important;
+    border-radius: 4px !important;
+    border: 1px solid var(--wl-border, #3e445b) !important;
+    background: var(--wl-bg-input, #282c3f) !important;
+    color: var(--wl-text-main) !important;
+    cursor: pointer !important;
+    transition: all 0.15s ease !important;
+}
+.preview-tb-btn:hover {
+    border-color: var(--wl-accent, #f39c12) !important;
+}
+.preview-tb-btn.active {
+    border-color: var(--wl-accent, #f39c12) !important;
+    color: var(--wl-accent, #f39c12) !important;
+}
+.in-drawer-regex-test-bar {
+    display: flex !important;
+    flex-direction: column !important;
+    padding: 8px 10px !important;
+    background: var(--wl-bg-sub, #161926) !important;
+    border-bottom: 1px solid var(--wl-border, #3e445b) !important;
+    gap: 6px !important;
+    flex-shrink: 0 !important;
+}
+.regex-test-info-line {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+}
+.regex-test-pattern {
+    font-size: 11px !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    background: var(--wl-bg-input, #282c3f) !important;
+    border: 1px solid var(--wl-border, #3e445b) !important;
+    color: var(--wl-accent, #f39c12) !important;
+    max-width: 220px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    font-family: Consolas, Monaco, monospace !important;
+}
+.regex-test-actions {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 6px !important;
+    flex-shrink: 0 !important;
+}
+.regex-test-match-badge {
+    font-size: 10px !important;
+    padding: 2px 6px !important;
+    border-radius: 8px !important;
+    white-space: nowrap !important;
+    background: rgba(0,0,0,0.1) !important;
+}
+.regex-test-match-badge.success {
+    background: rgba(46, 204, 113, 0.2) !important;
+    color: #2ecc71 !important;
+    border: 1px solid rgba(46, 204, 113, 0.4) !important;
+}
+.regex-test-match-badge.warn {
+    background: rgba(243, 156, 18, 0.2) !important;
+    color: #f39c12 !important;
+    border: 1px solid rgba(243, 156, 18, 0.4) !important;
+}
+.regex-test-textarea {
+    min-height: 48px !important;
+    max-height: 90px !important;
+    font-size: 11px !important;
+    resize: vertical !important;
+    width: 100% !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+}
+.in-drawer-preview-viewport {
+    flex: 1 !important;
+    min-height: 420px !important;
+    height: 100% !important;
+    width: 100% !important;
+    display: flex !important;
+    overflow: hidden !important;
+    background: var(--wl-bg-main, #1b1e2e) !important;
+    box-sizing: border-box !important;
+}
+.in-drawer-preview-iframe {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 420px !important;
+    flex: 1 !important;
+    border: none !important;
+    background: transparent !important;
+    box-sizing: border-box !important;
+}
+.in-drawer-preview-source {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 420px !important;
+    margin: 0 !important;
+    padding: 10px !important;
+    overflow: auto !important;
+    font-size: 11px !important;
+    font-family: Consolas, Monaco, monospace !important;
+    white-space: pre-wrap !important;
+    word-break: break-all !important;
+    background: var(--wl-bg-sub, #161926) !important;
+    color: var(--wl-text-main) !important;
+    box-sizing: border-box !important;
+}
+`;
+
+function ensureInDrawerPreviewStyles() {
+    let tag = document.getElementById('worldlore-in-drawer-injected-styles');
+    if (!tag) {
+        tag = document.createElement('style');
+        tag.id = 'worldlore-in-drawer-injected-styles';
+        tag.textContent = IN_DRAWER_PREVIEW_INJECTED_CSS;
+        document.head.appendChild(tag);
+    } else {
+        tag.textContent = IN_DRAWER_PREVIEW_INJECTED_CSS;
+    }
+}
+
+
 function createDrawer() {
+    ensureInDrawerPreviewStyles();
     if (document.getElementById('worldlore_agent_drawer')) return;
 
     const backdrop = document.createElement('div');
@@ -419,12 +636,33 @@ function createDrawer() {
                         <div class="worldlore-editor-actions">
                             <button id="worldlore_push_editor_file_btn" class="menu_button primary fa-solid fa-rocket" title="一键推送到酒馆待确认审核区"></button>
                             <button id="worldlore_diff_editor_file_btn" class="menu_button fa-solid fa-code-compare" title="对比草稿与酒馆线上版本 (Diff)"></button>
+                            <button id="worldlore_preview_html_btn" class="menu_button fa-solid fa-eye" title="前端预览 HTML / 正则渲染效果"></button>
                             <button id="worldlore_save_file_btn" class="menu_button fa-solid fa-floppy-disk" title="保存草稿"></button>
                             <button id="worldlore_rename_file_btn" class="menu_button fa-solid fa-pen-to-square" title="重命名草稿"></button>
                             <button id="worldlore_delete_file_btn" class="menu_button fa-solid fa-trash" title="删除草稿"></button>
                         </div>
                     </div>
                     <textarea id="worldlore_file_editor" class="worldlore-textarea editor-fullscreen" placeholder="在上方展开栏中选择文件查看与编辑，或由 Agent 写入..."></textarea>
+                    <!-- In-Drawer Live Preview Container -->
+                    <div id="worldlore_editor_preview_container" class="worldlore-in-drawer-preview displayNone" style="display:none; width:100%; flex:1; min-height:460px; height:100%; flex-direction:column; box-sizing:border-box;">
+                        <div class="in-drawer-preview-toolbar" id="wl_preview_top_bar" style="display:flex; flex-direction:row; align-items:center; justify-content:space-between; padding:6px 10px; gap:8px; flex-wrap:nowrap; flex-shrink:0;">
+                            <div class="preview-tb-left" style="display:inline-flex; flex-direction:row; align-items:center; gap:6px; flex-wrap:nowrap;">
+                                <button class="menu_button preview-tb-btn" id="wl_preview_test_toggle_btn" title="展开/收起正则模拟联调测试框">
+                                    <i class="fa-solid fa-flask"></i> 联调
+                                </button>
+                                <code class="regex-test-pattern" id="wl_preview_pattern_display" style="display:inline-block; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title=""></code>
+                            </div>
+                            <div class="preview-tb-right" style="display:inline-flex; flex-direction:row; align-items:center; gap:6px; flex-wrap:nowrap;">
+                                <span class="regex-test-match-badge" id="wl_preview_match_badge"></span>
+                            </div>
+                        </div>
+                        <div class="in-drawer-regex-test-bar" id="wl_preview_regex_test_bar" style="display:none; flex-direction:column; gap:6px; padding:6px 10px;">
+                            <textarea id="wl_preview_test_input" class="worldlore-input regex-test-textarea" placeholder="输入测试对话文本，实时查看正则替换效果..."></textarea>
+                        </div>
+                        <div class="in-drawer-preview-viewport" style="flex:1; width:100%; height:100%; min-height:420px; display:flex; box-sizing:border-box;">
+                            <iframe id="worldlore_in_drawer_iframe" class="in-drawer-preview-iframe" style="width:100%; height:100%; min-height:420px; border:none; flex:1;" sandbox="allow-scripts allow-same-origin"></iframe>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -773,7 +1011,7 @@ function bindEvents() {
             $('#worldlore_file_editor').val('');
             $('#worldlore_editor_filename').text('未选择文件');
             $('#worldlore_cur_file_name').text('未选择');
-            $('#worldlore_save_file_btn, #worldlore_delete_file_btn, #worldlore_rename_file_btn, #worldlore_push_editor_file_btn, #worldlore_diff_editor_file_btn').hide();
+            $('#worldlore_save_file_btn, #worldlore_delete_file_btn, #worldlore_rename_file_btn, #worldlore_push_editor_file_btn, #worldlore_diff_editor_file_btn, #worldlore_preview_html_btn').hide();
         }
     });
 
@@ -790,7 +1028,151 @@ function bindEvents() {
         diffDraftFileWithST(currentSelectedFile);
     });
 
-    // --- QUICK TOOLBAR BUTTONS: PULL ASSETS & NEW TEMPLATE ---
+    // ==========================================
+    // IN-DRAWER PREVIEW CONTROLLER
+    // ==========================================
+    let isEditorPreviewActive = false;
+    let inDrawerRegexMeta = null;
+
+    function getRegexAssetInfo(path) {
+        if (!path || !path.startsWith('regex/')) return null;
+        const parts = path.split('/');
+        const folder = parts.slice(0, 2).join('/');
+        const metaPath = `${folder}/meta.json`;
+        const replaceHtmlPath = `${folder}/replace.html`;
+
+        let meta = null;
+        const metaText = (currentSelectedFile === metaPath)
+            ? $('#worldlore_file_editor').val()
+            : readFile(metaPath);
+        if (metaText) {
+            try { meta = JSON.parse(metaText); } catch (e) {}
+        }
+        const scriptName = meta?.scriptName || folder.split('/').pop() || '正则脚本';
+
+        let htmlContent = '';
+        if (currentSelectedFile === replaceHtmlPath) {
+            htmlContent = $('#worldlore_file_editor').val() || '';
+        } else {
+            htmlContent = readFile(replaceHtmlPath);
+            if (htmlContent === null || htmlContent === undefined) {
+                htmlContent = '<div style="color:var(--wl-text-muted);padding:24px;text-align:center;font-size:14px;">（该正则草稿尚未创建 replace.html 模板代码）</div>';
+            }
+        }
+
+        return { folder, metaPath, replaceHtmlPath, meta, scriptName, htmlContent };
+    }
+
+    function updateInDrawerPreview() {
+        if (!currentSelectedFile) return;
+
+        let finalHtml = '';
+        const regexAsset = getRegexAssetInfo(currentSelectedFile);
+
+        if (regexAsset) {
+            inDrawerRegexMeta = regexAsset.meta;
+            const findRegexStr = regexAsset.meta?.findRegex || '';
+            const compiled = parseRegex(findRegexStr);
+
+            $('#wl_preview_top_bar').show();
+            $('#wl_preview_pattern_display').text(findRegexStr).attr('title', findRegexStr);
+
+            let testInputVal = $('#wl_preview_test_input').val();
+            if (!testInputVal && findRegexStr) {
+                testInputVal = generateMockTextFromRegex(findRegexStr);
+                $('#wl_preview_test_input').val(testInputVal);
+            }
+
+            let matchCount = 0;
+            if (compiled && testInputVal) {
+                const m = testInputVal.match(compiled);
+                matchCount = m ? m.length : 0;
+                try {
+                    finalHtml = testInputVal.replace(compiled, regexAsset.htmlContent);
+                } catch (e) {
+                    finalHtml = `<div style="color:#e74c3c;padding:12px;">正则替换错误: ${e.message}</div>`;
+                }
+            } else {
+                finalHtml = regexAsset.htmlContent;
+            }
+
+            const badge = $('#wl_preview_match_badge');
+            if (matchCount > 0) {
+                badge.attr('class', 'regex-test-match-badge success').html(`<i class="fa-solid fa-check"></i> 命中 ${matchCount} 处`);
+            } else if (testInputVal.trim().length > 0) {
+                badge.attr('class', 'regex-test-match-badge warn').html(`<i class="fa-solid fa-circle-exclamation"></i> 未命中`);
+            } else {
+                badge.attr('class', 'regex-test-match-badge').text('直接展示');
+            }
+        } else {
+            inDrawerRegexMeta = null;
+            $('#wl_preview_top_bar').hide();
+            $('#wl_preview_regex_test_bar').hide();
+            finalHtml = (currentSelectedFile === currentSelectedFile)
+                ? $('#worldlore_file_editor').val()
+                : readFile(currentSelectedFile) || '';
+        }
+
+        const iframe = document.getElementById('worldlore_in_drawer_iframe');
+        if (iframe) {
+            iframe.srcdoc = buildIframeDoc(finalHtml, false);
+        }
+    }
+
+    toggleEditorPreviewMode = function(forcedState) {
+        if (!currentSelectedFile) return;
+        isEditorPreviewActive = (forcedState !== undefined) ? forcedState : !isEditorPreviewActive;
+
+        if (isEditorPreviewActive) {
+            // Strict isolation: Hide editor completely, show preview
+            $('#worldlore_file_editor').addClass('displayNone').attr('style', 'display: none !important;');
+            $('#worldlore_editor_preview_container')
+                .removeClass('displayNone')
+                .attr('style', 'display: flex !important; width: 100%; flex: 1; min-height: 460px; height: 100%; flex-direction: column; box-sizing: border-box;');
+            $('#worldlore_preview_html_btn')
+                .removeClass('fa-eye')
+                .addClass('fa-code active')
+                .attr('title', '返回代码编辑 (切换回文本框)');
+            updateInDrawerPreview();
+        } else {
+            // Strict isolation: Hide preview completely, show editor
+            $('#worldlore_editor_preview_container').addClass('displayNone').attr('style', 'display: none !important;');
+            $('#worldlore_file_editor')
+                .removeClass('displayNone')
+                .attr('style', 'display: block !important;');
+            $('#worldlore_preview_html_btn')
+                .removeClass('fa-code active')
+                .addClass('fa-eye')
+                .attr('title', '前端预览 HTML / 正则渲染效果');
+        }
+    };
+
+    // Bind preview toggle button in editor action bar
+    $('#worldlore_preview_html_btn').on('click', () => {
+        toggleEditorPreviewMode();
+    });
+
+    // Toggle test bar sliding
+    $('#wl_preview_test_toggle_btn').on('click', () => {
+        const testBar = $('#wl_preview_regex_test_bar');
+        const isVisible = testBar.is(':visible');
+        if (isVisible) {
+            testBar.slideUp(100);
+            $('#wl_preview_test_toggle_btn').removeClass('active');
+        } else {
+            testBar.slideDown(100);
+            $('#wl_preview_test_toggle_btn').addClass('active');
+        }
+    });
+
+
+
+    // Live update when typing in test input
+    $('#wl_preview_test_input').on('input', () => {
+        updateInDrawerPreview();
+    });
+
+        // --- QUICK TOOLBAR BUTTONS: PULL ASSETS & NEW TEMPLATE ---
     $('#worldlore_quick_pull_lorebook_btn').on('click', async () => {
         const overview = getLorebooksOverview();
         const boundPrimary = overview.characterBoundLorebooks[0];
@@ -1786,11 +2168,15 @@ function renderFileList(query = '') {
         for (const file of sortedFiles) {
             const canPush = (file.fullPath.startsWith('lorebooks/') || file.fullPath.startsWith('character/') || file.fullPath.startsWith('persona/') || file.fullPath.startsWith('regex/')) && !file.fullPath.endsWith('/meta.json') && file.fullPath !== 'meta.json';
 
+            const canPreview = file.fullPath.endsWith('.html') || file.fullPath.endsWith('.htm') || file.fullPath.startsWith('regex/');
             const actionButtonsHtml = `
                 <div class="file-item-actions">
                     ${canPush ? `
                         <button class="file-action-btn quick-push-file-btn fa-solid fa-rocket" title="一键推送到酒馆待确认审核区"></button>
                         <button class="file-action-btn quick-diff-file-btn fa-solid fa-code-compare" title="对比草稿与酒馆线上版本 (Diff)"></button>
+                    ` : ''}
+                    ${canPreview ? `
+                        <button class="file-action-btn quick-preview-file-btn fa-solid fa-eye" title="前端预览 HTML / 正则渲染效果"></button>
                     ` : ''}
                     <button class="file-action-btn quick-rename-file-btn fa-solid fa-pen-to-square" title="重命名草稿"></button>
                 </div>
@@ -1817,6 +2203,14 @@ function renderFileList(query = '') {
                 promptRenameFile(file.fullPath);
             });
 
+            if (canPreview) {
+                item.find('.quick-preview-file-btn').on('click', (e) => {
+                    e.stopPropagation();
+                    loadFileToEditor(file.fullPath);
+                    if (typeof toggleEditorPreviewMode === 'function') toggleEditorPreviewMode(true);
+                });
+            }
+
             if (canPush) {
                 item.find('.quick-push-file-btn').on('click', (e) => {
                     e.stopPropagation();
@@ -1837,13 +2231,15 @@ function renderFileList(query = '') {
 }
 
 function loadFileToEditor(path) {
+    currentSelectedFile = path;
     ensureFolderExpanded(path);
+    if (typeof toggleEditorPreviewMode === 'function') toggleEditorPreviewMode(false);
     const content = readFile(path);
     if (content !== null) {
         $('#worldlore_editor_filename').text(path);
         $('#worldlore_cur_file_name').text(path);
         $('#worldlore_file_editor').val(content);
-        $('#worldlore_save_file_btn, #worldlore_delete_file_btn, #worldlore_rename_file_btn, #worldlore_push_editor_file_btn, #worldlore_diff_editor_file_btn').show();
+        $('#worldlore_save_file_btn, #worldlore_delete_file_btn, #worldlore_rename_file_btn, #worldlore_push_editor_file_btn, #worldlore_diff_editor_file_btn, #worldlore_preview_html_btn').show();
     }
 }
 
