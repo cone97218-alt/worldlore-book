@@ -1,4 +1,4 @@
-import { TOOL_DEFINITIONS } from '../tools/index.js';
+import { TOOL_DEFINITIONS, isToolEnabled } from '../tools/index.js';
 import { getSettings } from '../core/workspace.js';
 import { getContext } from '/scripts/extensions.js';
 import { Generate } from '/script.js';
@@ -21,7 +21,18 @@ const TOOL_ALIASES = {
     'delete_file': 'workspace_delete',
     'remove_draft': 'workspace_delete',
     'remove_file': 'workspace_delete',
+    'write_draft': 'workspace_write',
+    'write_file': 'workspace_write',
+    'read_draft': 'workspace_read',
+    'read_file': 'workspace_read',
+    'patch_draft': 'workspace_patch',
+    'patch_file': 'workspace_patch',
+    'search_draft': 'workspace_search',
+    'search_workspace': 'workspace_search',
+    'list_drafts': 'workspace_list',
+    'list_files': 'workspace_list',
     'list_regex_scripts': 'st_list_regex_scripts',
+    'list_regex': 'st_list_regex_scripts',
     'delete_regex_script': 'st_delete_regex_script',
     'import_regex': 'st_import_regex_to_workspace',
     'import_regex_script': 'st_import_regex_to_workspace',
@@ -32,6 +43,16 @@ const TOOL_ALIASES = {
     'install_regex': 'st_install_regex_from_file',
     'test_regex': 'st_test_regex_script',
     'test_regex_script': 'st_test_regex_script',
+    'get_character': 'st_get_character',
+    'get_character_info': 'st_get_character',
+    'read_character': 'st_get_character',
+    'get_persona': 'st_get_persona',
+    'get_persona_info': 'st_get_persona',
+    'read_persona': 'st_get_persona',
+    'read_lorebook': 'st_read_lorebook',
+    'read_worldbook': 'st_read_lorebook',
+    'get_lorebooks_overview': 'st_get_lorebooks_overview',
+    'lorebooks_overview': 'st_get_lorebooks_overview',
 };
 
 const READ_TOOLS = new Set([
@@ -109,6 +130,10 @@ export async function executeToolByName(name, args) {
         console.warn(`[Worldlore Agent] Unknown tool called: ${name}`);
         return { success: false, error: `Unknown tool: ${name}` };
     }
+    if (!isToolEnabled(resolvedName)) {
+        console.warn(`[Worldlore Agent] Tool "${resolvedName}" is disabled in settings.`);
+        return { success: false, error: `工具 "${resolvedName}" 已在扩展设置中被禁用。` };
+    }
     try {
         console.log(`[Worldlore Agent] Executing tool ${resolvedName}:`, args);
         const result = await tool.action(args);
@@ -166,7 +191,8 @@ function renderExecutionBadge(messageElement, executedList) {
         }
 
         // If this is a read tool and succeeded, attach a "Feed & Continue" pure FA button
-        if (item.result.success && READ_TOOLS.has(item.toolName)) {
+        const resolvedToolName = TOOL_ALIASES[item.toolName] || item.toolName;
+        if (item.result.success && READ_TOOLS.has(resolvedToolName)) {
             const feedBtn = document.createElement('button');
             feedBtn.className = 'worldlore-badge-feed-btn';
             feedBtn.setAttribute('title', '将读取结果回传给AI并继续生成');

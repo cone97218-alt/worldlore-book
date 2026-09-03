@@ -1137,8 +1137,10 @@ export function renderToolsManagerList() {
 
         for (const item of group.tools) {
             const enabled = isToolEnabled(item.name);
+            const toolDef = TOOL_DEFINITIONS.find(t => t.name === item.name);
+            const fullDesc = toolDef?.description || item.label;
             const toolRow = $(`
-                <label class="tool-checkbox-item">
+                <label class="tool-checkbox-item" title="${fullDesc}">
                     <input type="checkbox" data-tool="${item.name}" ${enabled ? 'checked' : ''} />
                     <div class="tool-item-info">
                         <span class="tool-item-name">${item.name}</span>
