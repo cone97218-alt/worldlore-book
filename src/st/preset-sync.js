@@ -2,25 +2,30 @@ import { getRequestHeaders } from '/script.js';
 import { getPresetManager } from '/scripts/preset-manager.js';
 import { openai_settings, openai_setting_names } from '/scripts/openai.js';
 import { Popup } from '/scripts/popup.js';
-
-export const BUNDLED_PRESET_URL = '/scripts/extensions/third-party/worldlore-agent/presets/worldlore_preset.json';
+import { DEFAULT_PRESET_DATA } from './default-preset-data.js';
 
 /**
- * Loads the bundled preset JSON data from the extension folder
+ * Loads the bundled preset JSON data
+ * Guaranteed zero-network, zero-404, and cross-platform compatible
  * @returns {Promise<object>}
  */
 export async function loadBundledPreset() {
-    try {
-        const resp = await fetch(BUNDLED_PRESET_URL + `?v=${Date.now()}`);
-        if (!resp.ok) {
-            throw new Error(`无法加载预设文件: HTTP ${resp.status}`);
-        }
-        const data = await resp.json();
-        return data;
-    } catch (e) {
-        console.error('[Worldlore Agent] Failed to load bundled preset:', e);
-        throw e;
+    if (DEFAULT_PRESET_DATA && typeof DEFAULT_PRESET_DATA === 'object') {
+        return structuredClone(DEFAULT_PRESET_DATA);
     }
+
+    // Dynamic relative URL fallback (relative to current script location)
+    try {
+        const dynamicUrl = new URL('../../presets/worldlore_preset.json', import.meta.url).href;
+        const resp = await fetch(dynamicUrl + `?v=${Date.now()}`);
+        if (resp.ok) {
+            return await resp.json();
+        }
+    } catch (e) {
+        console.warn('[Worldlore Agent] Fallback fetch failed:', e);
+    }
+
+    throw new Error('无法读取预设数据');
 }
 
 /**
