@@ -2381,13 +2381,16 @@ body > #toast-container,
 }
 
 .in-drawer-regex-test-bar {
-    display: flex !important;
+    display: none !important;
     flex-direction: column !important;
     padding: 8px 10px !important;
     background: var(--wl-bg-sub) !important;
     border-bottom: 1px solid var(--wl-border) !important;
     gap: 6px !important;
     flex-shrink: 0 !important;
+}
+.in-drawer-regex-test-bar.open {
+    display: flex !important;
 }
 
 .regex-test-info-line {

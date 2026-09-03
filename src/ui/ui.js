@@ -419,13 +419,16 @@ const IN_DRAWER_PREVIEW_INJECTED_CSS = `
     color: var(--wl-accent, #f39c12) !important;
 }
 .in-drawer-regex-test-bar {
-    display: flex !important;
+    display: none !important;
     flex-direction: column !important;
     padding: 8px 10px !important;
     background: var(--wl-bg-sub, #161926) !important;
     border-bottom: 1px solid var(--wl-border, #3e445b) !important;
     gap: 6px !important;
     flex-shrink: 0 !important;
+}
+.in-drawer-regex-test-bar.open {
+    display: flex !important;
 }
 .regex-test-info-line {
     display: flex !important;
@@ -628,12 +631,12 @@ function createDrawer() {
 
                 <!-- Full-Height Editor Body -->
                 <div class="worldlore-editor-full-container">
-                    <div class="worldlore-editor-header">
-                        <div class="editor-filename-wrap worldlore-nowrap-text">
-                            <i class="fa-solid fa-pen-to-square"></i>
-                            <span id="worldlore_editor_filename">world/overview.md</span>
+                    <div class="worldlore-editor-header" style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px; width:100%; box-sizing:border-box;">
+                        <div class="editor-filename-wrap" style="display:flex; align-items:center; width:100%; min-width:0; gap:6px; color:var(--wl-accent); box-sizing:border-box;">
+                            <i class="fa-solid fa-pen-to-square" style="flex-shrink:0;"></i>
+                            <span id="worldlore_editor_filename" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; font-size:12px; min-width:0; flex:1;" title="当前编辑的文件路径">world/overview.md</span>
                         </div>
-                        <div class="worldlore-editor-actions">
+                        <div class="worldlore-editor-actions" style="display:flex; align-items:center; justify-content:flex-end; gap:6px; width:100%; flex-wrap:nowrap; box-sizing:border-box;">
                             <button id="worldlore_push_editor_file_btn" class="menu_button primary fa-solid fa-rocket" title="一键推送到酒馆待确认审核区"></button>
                             <button id="worldlore_diff_editor_file_btn" class="menu_button fa-solid fa-code-compare" title="对比草稿与酒馆线上版本 (Diff)"></button>
                             <button id="worldlore_preview_html_btn" class="menu_button fa-solid fa-eye" title="前端预览 HTML / 正则渲染效果"></button>
@@ -1155,12 +1158,12 @@ function bindEvents() {
     // Toggle test bar sliding
     $('#wl_preview_test_toggle_btn').on('click', () => {
         const testBar = $('#wl_preview_regex_test_bar');
-        const isVisible = testBar.is(':visible');
-        if (isVisible) {
-            testBar.slideUp(100);
+        const isOpen = testBar.hasClass('open');
+        if (isOpen) {
+            testBar.removeClass('open');
             $('#wl_preview_test_toggle_btn').removeClass('active');
         } else {
-            testBar.slideDown(100);
+            testBar.addClass('open');
             $('#wl_preview_test_toggle_btn').addClass('active');
         }
     });
