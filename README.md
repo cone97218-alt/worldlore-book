@@ -67,7 +67,7 @@ git clone https://github.com/cone97218-alt/worldlore-book.git worldlore-agent
 - **`st_delete_lorebook`**：彻底删除世界书并自动解绑（支持操作日志一键无损撤回恢复）；
 - **`stage_lorebook_entry`**：暂存世界书条目变更（支持 `from_file` 零 Token 直通）；
 - **`stage_character_field`** / **`stage_persona_field`**：暂存角色与用户设定变更；
-- **`workspace_write`** / **`workspace_patch`** / **`workspace_delete`** / **`workspace_read`**：工作区草稿写入、差量精准替换、安全删除与读取；
+- **`workspace_write`** / **`workspace_patch`** / **`workspace_delete`** / **`workspace_read`** / **`workspace_rename`** / **`workspace_rename_project`**：工作区草稿写入、差量精准替换、安全删除、读取与重命名；
 - **`st_read_lorebook`** / **`st_get_lorebooks_overview`**：多范围穿透读取世界书。
 
 在系统提示词 (System Prompt) 中可直接引入工具说明，点击插件抽屉第四栏【提示词指南】即可一键复制完整 Prompt！
@@ -75,6 +75,19 @@ git clone https://github.com/cone97218-alt/worldlore-book.git worldlore-agent
 ---
 
 ## 📝 更新日志
+
+### v1.2.0
+- **工作区草稿多级文件夹与胶囊折叠目录树**：
+  - 顶栏横向文件夹胶囊过滤条（Folder Filter Pills）：支持快速单选过滤指定文件夹或查看全部；
+  - 多级树状胶囊折叠目录（Folder Tree View）：文件夹以圆角胶囊徽章呈现，支持平滑展开/收起与无限层级递归缩进；
+  - 极简纯文件名展示，去除了冗余的前缀路径显示，提升视觉整洁度；
+  - 搜索联动：输入关键词实时自动展开命中文件的各级父文件夹并高亮展示；
+- **新增重命名草稿与工作区功能**：
+  - 悬浮球面板常驻纯图标按键：工作区管理栏新增重命名工作区按键，编辑器栏及文件列表项新增重命名草稿按键（纯 FontAwesome 图标，无文字）；
+  - 注册为 AI 工具：提供 `workspace_rename`（重命名草稿）与 `workspace_rename_project`（重命名工作区），并支持别名解析；
+  - 全流程快照日志：支持在操作日志中一键撤回（Undo）与重做（Redo）；
+  - 全局宏与提示词注入：在文本模式下 `{{worldlore_tools}}` 宏自动注入重命名工具的参数规范；
+  - 扩展设置独立管理：在「可用 AI 工具管理」中提供独立开关，控制 AI 对重命名工具的使用权。
 
 ### v1.1.0
 - **新增内置专属预设**：官方内置 `写卡助手0.3` 专属预设，包含 31 组 Prompts 与 `<agent_action>` 正则折叠渲染脚本；

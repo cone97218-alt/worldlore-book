@@ -1,6 +1,6 @@
 import { getContext } from '/scripts/extensions.js';
 import { ToolManager } from '/scripts/tool-calling.js';
-import { getSettings, saveWorkspace, writeFile, readFile, readFileSlice, deleteFile, listFiles, searchFiles } from '../core/workspace.js';
+import { getSettings, saveWorkspace, writeFile, readFile, readFileSlice, deleteFile, renameFile, listFiles, searchFiles, renameProject, getActiveProjectName } from '../core/workspace.js';
 import { applyRegexScript, deleteRegexScript } from '../st/regex-sync.js';
 import { createRegexToolDefinitions } from './regex-tools.js';
 import { applyWorldInfoEntry, applyCharacterFieldUpdate, applyPersonaFieldUpdate, getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview, readLorebookEntriesScoped, createAndBindWorldInfo, restoreCharacterLorebookBinding, deleteWorldInfoSafely, restoreDeletedWorldInfo } from '../st/st-sync.js';
@@ -218,6 +218,10 @@ export async function undoHistoryRecord(historyId) {
             if (item.beforeState?.content !== undefined && item.beforeState?.content !== null) {
                 writeFile(item.target, item.beforeState.content, 'overwrite');
             }
+        } else if (item.action === 'rename') {
+            renameFile(item.afterState.path, item.beforeState.path);
+        } else if (item.action === 'rename_project') {
+            renameProject(item.afterState.name, item.beforeState.name);
         } else if (item.beforeState?.content === null || item.beforeState?.content === undefined) {
             deleteFile(item.target);
         } else {
@@ -285,6 +289,10 @@ export async function redoHistoryRecord(historyId) {
     } else if (item.type === 'workspace') {
         if (item.action === 'delete') {
             deleteFile(item.target);
+        } else if (item.action === 'rename') {
+            renameFile(item.beforeState.path, item.afterState.path);
+        } else if (item.action === 'rename_project') {
+            renameProject(item.beforeState.name, item.afterState.name);
         } else if (item.afterState?.content !== undefined) {
             writeFile(item.target, item.afterState.content, 'overwrite');
         }
@@ -495,6 +503,86 @@ export const TOOL_DEFINITIONS = [
                 path: args.path,
                 message: `成功删除工作区草稿 "${args.path}"（已自动备份快照，可在操作日志中一键撤回恢复）。`
             });
+        }
+    },
+    {
+        name: 'workspace_rename',
+        displayName: '工作区重命名草稿',
+        description: '重命名工作区中的草稿文件或移动文件路径。支持操作日志一键撤回。当用户要求“把草稿重命名为xxx”、“把xxx文件改名为yyy”时调用。',
+        parameters: {
+            type: 'object',
+            properties: {
+                old_path: { type: 'string', description: '原草稿文件相对路径，如 "world/magic.md"' },
+                new_path: { type: 'string', description: '新草稿文件相对路径，如 "world/magic_system.md"' }
+            },
+            required: ['old_path', 'new_path']
+        },
+        action: async (args) => {
+            const oldPath = args.old_path || args.from_path || args.path;
+            const newPath = args.new_path || args.to_path;
+            if (!oldPath || !newPath) {
+                return JSON.stringify({ success: false, error: '缺少 old_path 或 new_path 参数' });
+            }
+            try {
+                renameFile(oldPath, newPath);
+                addHistoryRecord({
+                    type: 'workspace',
+                    action: 'rename',
+                    target: newPath,
+                    summary: `重命名草稿: ${oldPath} ➔ ${newPath}`,
+                    beforeState: { path: oldPath },
+                    afterState: { path: newPath },
+                    canUndo: true,
+                });
+                return JSON.stringify({
+                    success: true,
+                    old_path: oldPath,
+                    new_path: newPath,
+                    message: `成功将草稿 "${oldPath}" 重命名为 "${newPath}"（已记录操作日志，支持撤回）。`
+                });
+            } catch (e) {
+                return JSON.stringify({ success: false, error: e.message });
+            }
+        }
+    },
+    {
+        name: 'workspace_rename_project',
+        displayName: '工作区重命名项目',
+        description: '重命名当前或指定的工作区写卡项目名称。支持操作日志一键撤回。当用户要求“把当前工作区改名为xxx”、“重命名工作区/项目”时调用。',
+        parameters: {
+            type: 'object',
+            properties: {
+                new_name: { type: 'string', description: '新工作区项目名称' },
+                old_name: { type: 'string', description: '可选。原工作区项目名称（留空则默认当前激活的工作区）' }
+            },
+            required: ['new_name']
+        },
+        action: async (args) => {
+            const oldName = args.old_name || getActiveProjectName();
+            const newName = args.new_name;
+            if (!newName) {
+                return JSON.stringify({ success: false, error: '缺少 new_name 参数' });
+            }
+            try {
+                renameProject(oldName, newName);
+                addHistoryRecord({
+                    type: 'workspace',
+                    action: 'rename_project',
+                    target: newName,
+                    summary: `重命名工作区: ${oldName} ➔ ${newName}`,
+                    beforeState: { name: oldName },
+                    afterState: { name: newName },
+                    canUndo: true,
+                });
+                return JSON.stringify({
+                    success: true,
+                    old_name: oldName,
+                    new_name: newName,
+                    message: `成功将工作区 "${oldName}" 重命名为 "${newName}"（已记录操作日志，支持撤回）。`
+                });
+            } catch (e) {
+                return JSON.stringify({ success: false, error: e.message });
+            }
         }
     },
 
@@ -1606,6 +1694,22 @@ export const TEXT_MODE_TOOL_DEFS = {
             desc: '删除工作区草稿文件（记录审计日志，支持撤回）',
             params: [
                 { name: 'path', type: 'string', req: '必填', desc: '要删除的文件相对路径' }
+            ]
+        },
+        {
+            name: 'workspace_rename',
+            desc: '重命名工作区中的草稿文件（记录审计日志，支持撤回）',
+            params: [
+                { name: 'old_path', type: 'string', req: '必填', desc: '原草稿文件相对路径' },
+                { name: 'new_path', type: 'string', req: '必填', desc: '新草稿文件相对路径' }
+            ]
+        },
+        {
+            name: 'workspace_rename_project',
+            desc: '重命名写卡工作区/项目名称（记录审计日志，支持撤回）',
+            params: [
+                { name: 'new_name', type: 'string', req: '必填', desc: '新工作区项目名称' },
+                { name: 'old_name', type: 'string', req: '可选', desc: '原工作区项目名称（留空默认当前工作区）' }
             ]
         }
     ],

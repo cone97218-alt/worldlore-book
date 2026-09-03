@@ -367,6 +367,127 @@
     font-size: 12px;
 }
 
+/* Top Horizontal Folder Filter Pills Bar */
+.worldlore-folder-filter-pills {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 3px 2px 7px 2px;
+    margin-bottom: 4px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+}
+.worldlore-folder-filter-pills::-webkit-scrollbar {
+    display: none;
+}
+.worldlore-filter-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    cursor: pointer;
+    background: var(--wl-bg-sub);
+    border: 1px solid var(--wl-border);
+    color: var(--wl-text-main);
+    white-space: nowrap;
+    user-select: none;
+    transition: all 0.15s ease;
+    opacity: 0.85;
+}
+.worldlore-filter-pill:hover {
+    opacity: 1;
+    border-color: var(--wl-accent);
+    background: rgba(0, 0, 0, 0.05);
+}
+.worldlore-filter-pill.active {
+    opacity: 1;
+    background: var(--wl-active-bg);
+    color: var(--wl-active-text);
+    border-color: transparent;
+    font-weight: 600;
+}
+.worldlore-filter-pill .pill-count {
+    font-size: 10px;
+    opacity: 0.8;
+    padding: 1px 5px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.12);
+}
+.worldlore-filter-pill.active .pill-count {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+/* Tree Folder Row & Pill Badge */
+.worldlore-folder-group {
+    display: flex;
+    flex-direction: column;
+}
+.worldlore-folder-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px;
+    user-select: none;
+    cursor: pointer;
+}
+.worldlore-folder-header .folder-chevron {
+    font-size: 10px;
+    opacity: 0.6;
+    cursor: pointer;
+    width: 12px;
+    text-align: center;
+    transition: transform 0.18s ease;
+}
+.worldlore-folder-header .folder-chevron.expanded {
+    transform: rotate(90deg);
+}
+.folder-pill-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--wl-bg-sub);
+    border: 1px solid var(--wl-border);
+    color: var(--wl-text-main);
+    transition: all 0.15s ease;
+    user-select: none;
+}
+.folder-pill-badge:hover {
+    border-color: var(--wl-accent);
+    background: rgba(0, 0, 0, 0.04);
+}
+.folder-pill-badge .folder-icon {
+    font-size: 11px;
+    color: var(--wl-accent);
+}
+.folder-pill-badge .folder-badge-count {
+    font-size: 10px;
+    opacity: 0.7;
+    background: rgba(0, 0, 0, 0.08);
+    padding: 1px 5px;
+    border-radius: 8px;
+}
+.worldlore-folder-children {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding-left: 14px;
+    margin-left: 9px;
+    border-left: 1px dashed var(--wl-border);
+    margin-top: 2px;
+    margin-bottom: 4px;
+}
+.file-leaf-name {
+    font-weight: 500;
+}
+
 /* Spacious File List Inside Collapsed Panel */
 .worldlore-file-list.unified-spacious-list {
     max-height: 250px;

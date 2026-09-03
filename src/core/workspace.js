@@ -140,6 +140,36 @@ export function deleteProject(name) {
     return false;
 }
 
+export function renameProject(oldName, newName) {
+    const settings = getSettings();
+    const from = String(oldName || '').trim();
+    const to = String(newName || '').trim();
+    if (!from || !to) {
+        throw new Error('工作区名称不能为空');
+    }
+    if (from === to) {
+        return true;
+    }
+    if (!settings.projects[from]) {
+        throw new Error(`原工作区项目 "${from}" 不存在`);
+    }
+    if (settings.projects[to]) {
+        throw new Error(`目标工作区项目 "${to}" 已存在`);
+    }
+
+    const proj = settings.projects[from];
+    proj.name = to;
+    proj.updatedAt = Date.now();
+    settings.projects[to] = proj;
+    delete settings.projects[from];
+
+    if (settings.activeProject === from) {
+        settings.activeProject = to;
+    }
+    saveWorkspace();
+    return true;
+}
+
 export function normalizePath(path) {
     if (!path) return '';
     return path.replace(/\\/g, '/').replace(/^\/+/, '').trim();
@@ -231,6 +261,33 @@ export function deleteFile(filePath) {
         return true;
     }
     return false;
+}
+
+export function renameFile(oldPath, newPath) {
+    const project = getActiveProject();
+    const from = normalizePath(oldPath);
+    const to = normalizePath(newPath);
+    if (!from || !to) {
+        throw new Error('草稿路径不能为空');
+    }
+    if (from === to) {
+        return true;
+    }
+    if (!project.files[from]) {
+        throw new Error(`原草稿文件不存在: ${from}`);
+    }
+    if (project.files[to]) {
+        throw new Error(`目标草稿文件已存在: ${to}`);
+    }
+
+    project.files[to] = {
+        ...project.files[from],
+        updatedAt: Date.now()
+    };
+    delete project.files[from];
+    project.updatedAt = Date.now();
+    saveWorkspace();
+    return true;
 }
 
 export function listFiles(prefix = '') {

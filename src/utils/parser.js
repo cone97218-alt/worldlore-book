@@ -21,6 +21,12 @@ const TOOL_ALIASES = {
     'delete_file': 'workspace_delete',
     'remove_draft': 'workspace_delete',
     'remove_file': 'workspace_delete',
+    'rename_draft': 'workspace_rename',
+    'rename_file': 'workspace_rename',
+    'workspace_rename_file': 'workspace_rename',
+    'rename_project': 'workspace_rename_project',
+    'rename_workspace': 'workspace_rename_project',
+    'workspace_rename_workspace': 'workspace_rename_project',
     'write_draft': 'workspace_write',
     'write_file': 'workspace_write',
     'read_draft': 'workspace_read',
@@ -156,8 +162,9 @@ function renderExecutionBadge(messageElement, executedList) {
         badge.className = `worldlore-badge ${item.result.success ? 'success' : 'error'}`;
         const isCreateWi = item.toolName === 'st_create_and_bind_lorebook' || TOOL_ALIASES[item.toolName] === 'st_create_and_bind_lorebook';
         const isDelete = item.toolName === 'st_delete_lorebook' || item.toolName === 'workspace_delete' || TOOL_ALIASES[item.toolName] === 'st_delete_lorebook' || TOOL_ALIASES[item.toolName] === 'workspace_delete';
-        const iconClass = !item.result.success ? 'triangle-exclamation' : (isDelete ? 'trash-can' : (isCreateWi ? 'book-bookmark' : 'bolt'));
-        const paramSummary = item.params.book_name || item.params.from_file || item.params.path || item.params.comment || item.params.field || item.params.query || item.params.scope || 'executed';
+        const isRename = item.toolName === 'workspace_rename' || item.toolName === 'workspace_rename_project' || TOOL_ALIASES[item.toolName] === 'workspace_rename' || TOOL_ALIASES[item.toolName] === 'workspace_rename_project';
+        const iconClass = !item.result.success ? 'triangle-exclamation' : (isDelete ? 'trash-can' : (isRename ? 'pen-to-square' : (isCreateWi ? 'book-bookmark' : 'bolt')));
+        const paramSummary = (item.params.old_path && item.params.new_path ? `${item.params.old_path} ➔ ${item.params.new_path}` : (item.params.old_name && item.params.new_name ? `${item.params.old_name} ➔ ${item.params.new_name}` : (item.params.new_name || item.params.new_path))) || item.params.book_name || item.params.from_file || item.params.path || item.params.comment || item.params.field || item.params.query || item.params.scope || 'executed';
 
         badge.innerHTML = `
             <i class="fa-solid fa-${iconClass}"></i>

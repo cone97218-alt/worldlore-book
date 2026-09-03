@@ -1,4 +1,4 @@
-import { getSettings, saveWorkspace, getProjects, getActiveProjectName, getActiveProject, createProject, switchProject, deleteProject, listFiles, readFile, writeFile, deleteFile, exportProjectData, importProjectData } from '../core/workspace.js';
+import { getSettings, saveWorkspace, getProjects, getActiveProjectName, getActiveProject, createProject, switchProject, deleteProject, renameProject, listFiles, readFile, writeFile, deleteFile, renameFile, exportProjectData, importProjectData } from '../core/workspace.js';
 import { getStagingEntries, removeStagingEntry, clearStaging, applyStagingEntry, applyAllStaging, getHistoryEntries, undoHistoryRecord, redoHistoryRecord, restageHistoryRecord, clearHistory, getToolDocumentationPrompt, setToolMode, addStagingEntry, addHistoryRecord, isToolEnabled, setToolEnabled, TOOL_DEFINITIONS } from '../tools/index.js';
 import { getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview, readLorebookEntriesScoped } from '../st/st-sync.js';
 import { importLorebookToWorkspace, importCharacterToWorkspace, importPersonaToWorkspace, parseFrontmatter, formatFrontmatter } from '../st/import-sync.js';
@@ -61,6 +61,9 @@ export async function showSelectModal({ title = '请选择', message = '请选�
 
 let currentSelectedFile = null;
 let lastToggleTime = 0;
+let currentFolderFilter = null;
+let expandedFolders = new Set();
+let folderTreeInitialized = false;
 
 const THEMES = ['default', 'morandi-beige', 'morandi-gray'];
 const THEME_NAMES = {
@@ -378,6 +381,7 @@ function createDrawer() {
                         <div class="workspace-project-subbar">
                             <select id="worldlore_project_select" class="worldlore-select"></select>
                             <button id="worldlore_new_project_btn" class="menu_button fa-solid fa-plus" title="新建项目"></button>
+                            <button id="worldlore_rename_project_btn" class="menu_button fa-solid fa-pen-to-square" title="重命名当前项目"></button>
                             <button id="worldlore_export_project_btn" class="menu_button fa-solid fa-file-export" title="导出项目"></button>
                             <button id="worldlore_import_project_btn" class="menu_button fa-solid fa-file-import" title="导入项目"></button>
                             <button id="worldlore_delete_project_btn" class="menu_button fa-solid fa-trash" title="删除项目"></button>
@@ -397,6 +401,9 @@ function createDrawer() {
                         <!-- Search file -->
                         <input type="text" id="worldlore_file_search_input" class="worldlore-input" placeholder="搜索草稿文件..." />
 
+                        <!-- Top Folder Filter Pills Bar -->
+                        <div id="worldlore_folder_filter_pills" class="worldlore-folder-filter-pills" style="display:none;"></div>
+
                         <!-- Spacious File List Container -->
                         <div id="worldlore_file_list" class="worldlore-file-list unified-spacious-list"></div>
                     </div>
@@ -413,6 +420,7 @@ function createDrawer() {
                             <button id="worldlore_push_editor_file_btn" class="menu_button primary fa-solid fa-rocket" title="一键推送到酒馆待确认审核区"></button>
                             <button id="worldlore_diff_editor_file_btn" class="menu_button fa-solid fa-code-compare" title="对比草稿与酒馆线上版本 (Diff)"></button>
                             <button id="worldlore_save_file_btn" class="menu_button fa-solid fa-floppy-disk" title="保存草稿"></button>
+                            <button id="worldlore_rename_file_btn" class="menu_button fa-solid fa-pen-to-square" title="重命名草稿"></button>
                             <button id="worldlore_delete_file_btn" class="menu_button fa-solid fa-trash" title="删除草稿"></button>
                         </div>
                     </div>
@@ -553,6 +561,9 @@ function bindEvents() {
         const name = $(this).val();
         switchProject(name);
         $('#worldlore_cur_proj_name').text(name);
+        currentFolderFilter = null;
+        expandedFolders.clear();
+        folderTreeInitialized = false;
         refreshWorkspaceUI();
     });
 
@@ -562,6 +573,30 @@ function bindEvents() {
             toastr.success(`已创建并切换到项目: ${name}`);
             $('#worldlore_cur_proj_name').text(name.trim());
             refreshWorkspaceUI();
+        }
+    });
+
+    $('#worldlore_rename_project_btn').on('click', async () => {
+        const cur = getActiveProjectName();
+        const newName = await Popup.show.input('重命名工作区项目', '输入新的工作区名称：', cur);
+        if (newName && newName.trim() && newName.trim() !== cur) {
+            try {
+                renameProject(cur, newName.trim());
+                addHistoryRecord({
+                    type: 'workspace',
+                    action: 'rename_project',
+                    target: newName.trim(),
+                    summary: `重命名工作区: ${cur} ➔ ${newName.trim()}`,
+                    beforeState: { name: cur },
+                    afterState: { name: newName.trim() },
+                    canUndo: true,
+                });
+                toastr.success(`工作区已重命名为: ${newName.trim()}`);
+                $('#worldlore_cur_proj_name').text(newName.trim());
+                refreshWorkspaceUI();
+            } catch (e) {
+                toastr.error(`重命名失败: ${e.message}`);
+            }
         }
     });
 
@@ -629,6 +664,39 @@ function bindEvents() {
         refreshWorkspaceUI();
     });
 
+    const promptRenameFile = async (targetPath) => {
+        const oldPath = targetPath || currentSelectedFile;
+        if (!oldPath) return;
+        const newPath = await Popup.show.input('重命名草稿文件', '输入新的草稿路径及文件名 (如 world/magic.md)：', oldPath);
+        if (newPath && newPath.trim() && newPath.trim() !== oldPath) {
+            try {
+                renameFile(oldPath, newPath.trim());
+                addHistoryRecord({
+                    type: 'workspace',
+                    action: 'rename',
+                    target: newPath.trim(),
+                    summary: `重命名草稿: ${oldPath} ➔ ${newPath.trim()}`,
+                    beforeState: { path: oldPath },
+                    afterState: { path: newPath.trim() },
+                    canUndo: true,
+                });
+                toastr.success(`草稿已重命名为: ${newPath.trim()}`);
+                if (currentSelectedFile === oldPath) {
+                    currentSelectedFile = newPath.trim();
+                }
+                refreshWorkspaceUI();
+                loadFileToEditor(currentSelectedFile);
+            } catch (e) {
+                toastr.error(`重命名失败: ${e.message}`);
+            }
+        }
+    };
+
+    $('#worldlore_rename_file_btn').on('click', () => {
+        if (!currentSelectedFile) return;
+        promptRenameFile(currentSelectedFile);
+    });
+
     $('#worldlore_delete_file_btn').on('click', async () => {
         if (!currentSelectedFile) return;
         const conf = await Popup.show.confirm('删除文件', `确定删除草稿 "${currentSelectedFile}" 吗？`);
@@ -639,7 +707,7 @@ function bindEvents() {
             $('#worldlore_file_editor').val('');
             $('#worldlore_editor_filename').text('未选择文件');
             $('#worldlore_cur_file_name').text('未选择');
-            $('#worldlore_save_file_btn, #worldlore_delete_file_btn, #worldlore_push_editor_file_btn, #worldlore_diff_editor_file_btn').hide();
+            $('#worldlore_save_file_btn, #worldlore_delete_file_btn, #worldlore_rename_file_btn, #worldlore_push_editor_file_btn, #worldlore_diff_editor_file_btn').hide();
         }
     });
 
@@ -1124,6 +1192,8 @@ const TOOL_GROUPS = [
         tools: [
             { name: 'workspace_patch', label: '精准局部差量修改草稿' },
             { name: 'workspace_write', label: '全量写入草稿文件' },
+            { name: 'workspace_rename', label: '重命名草稿文件' },
+            { name: 'workspace_rename_project', label: '重命名工作区项目' },
             { name: 'workspace_read', label: '读取工作区草稿文件' },
             { name: 'workspace_delete', label: '删除工作区草稿文件' },
             { name: 'workspace_list', label: '列出工作区文件列表' },
@@ -1424,67 +1494,290 @@ export async function diffDraftFileWithST(path) {
     }
 }
 
-function renderFileList(query = '') {
-    const container = $('#worldlore_file_list');
-    container.empty();
-    const files = listFiles();
+function buildFileTree(files) {
+    const root = {
+        name: '',
+        path: '',
+        folders: new Map(),
+        files: []
+    };
 
-    const filtered = query ? files.filter(f => f.path.toLowerCase().includes(query.toLowerCase())) : files;
+    for (const file of files) {
+        const parts = file.path.split('/');
+        let currentFolder = root;
+        let currentPath = '';
 
-    if (filtered.length === 0) {
-        container.html('<div class="worldlore-empty-hint"><i class="fa-solid fa-folder-open"></i><br/><span style="font-size:12px;">无草稿文件</span></div>');
-        return;
-    }
-
-    for (const file of filtered) {
-        const canPush = (file.path.startsWith('lorebooks/') || file.path.startsWith('character/') || file.path.startsWith('persona/') || file.path.startsWith('regex/')) && !file.path.endsWith('/meta.json') && file.path !== 'meta.json';
-
-        const actionButtonsHtml = canPush ? `
-            <div class="file-item-actions">
-                <button class="file-action-btn quick-push-file-btn fa-solid fa-rocket" title="一键推送到酒馆待确认审核区"></button>
-                <button class="file-action-btn quick-diff-file-btn fa-solid fa-code-compare" title="对比草稿与酒馆线上版本 (Diff)"></button>
-            </div>
-        ` : '';
-
-        const item = $(`
-            <div class="worldlore-file-item ${currentSelectedFile === file.path ? 'active' : ''}">
-                <i class="fa-solid fa-file-lines file-icon"></i>
-                <span class="file-path">${file.path}</span>
-                <span class="file-size">${file.length}b</span>
-                ${actionButtonsHtml}
-            </div>
-        `);
-
-        item.on('click', () => {
-            currentSelectedFile = file.path;
-            $('.worldlore-file-item').removeClass('active');
-            item.addClass('active');
-            loadFileToEditor(file.path);
-        });
-
-        if (canPush) {
-            item.find('.quick-push-file-btn').on('click', (e) => {
-                e.stopPropagation();
-                pushDraftFileToStaging(file.path);
-            });
-
-            item.find('.quick-diff-file-btn').on('click', (e) => {
-                e.stopPropagation();
-                diffDraftFileWithST(file.path);
-            });
+        for (let i = 0; i < parts.length - 1; i++) {
+            const folderName = parts[i];
+            currentPath = currentPath ? `${currentPath}/${folderName}` : folderName;
+            if (!currentFolder.folders.has(folderName)) {
+                currentFolder.folders.set(folderName, {
+                    name: folderName,
+                    path: currentPath,
+                    folders: new Map(),
+                    files: []
+                });
+            }
+            currentFolder = currentFolder.folders.get(folderName);
         }
 
-        container.append(item);
+        const fileName = parts[parts.length - 1];
+        currentFolder.files.push({
+            ...file,
+            name: fileName,
+            fullPath: file.path
+        });
+    }
+
+    return root;
+}
+
+function countFilesInTree(node) {
+    let count = node.files.length;
+    for (const sub of node.folders.values()) {
+        count += countFilesInTree(sub);
+    }
+    return count;
+}
+
+function ensureFolderExpanded(filePath) {
+    if (!filePath) return;
+    const parts = filePath.split('/');
+    let cur = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+        cur = cur ? `${cur}/${parts[i]}` : parts[i];
+        expandedFolders.add(cur);
     }
 }
 
+function renderFolderFilterPills(allFiles) {
+    const pillsContainer = $('#worldlore_folder_filter_pills');
+    if (!pillsContainer.length) return;
+    pillsContainer.empty();
+
+    if (!allFiles || allFiles.length === 0) {
+        pillsContainer.hide();
+        return;
+    }
+
+    const tree = buildFileTree(allFiles);
+    const topFolders = Array.from(tree.folders.keys()).sort();
+    const rootFilesCount = tree.files.length;
+
+    if (topFolders.length === 0) {
+        pillsContainer.hide();
+        return;
+    }
+    pillsContainer.show();
+
+    // 1. "全部" Pill
+    const isAllActive = currentFolderFilter === null;
+    const allPill = $(`
+        <div class="worldlore-filter-pill ${isAllActive ? 'active' : ''}">
+            <i class="fa-solid fa-layer-group"></i>
+            <span>全部</span>
+            <span class="pill-count">${allFiles.length}</span>
+        </div>
+    `);
+    allPill.on('click', () => {
+        currentFolderFilter = null;
+        renderFileList($('#worldlore_file_search_input').val());
+    });
+    pillsContainer.append(allPill);
+
+    // 2. Folder Pills
+    for (const folderName of topFolders) {
+        const folderNode = tree.folders.get(folderName);
+        const count = countFilesInTree(folderNode);
+        const isAct = currentFolderFilter === folderName;
+        const pill = $(`
+            <div class="worldlore-filter-pill ${isAct ? 'active' : ''}">
+                <i class="fa-solid fa-folder"></i>
+                <span class="worldlore-nowrap-text">${escapeHtml(folderName)}</span>
+                <span class="pill-count">${count}</span>
+            </div>
+        `);
+        pill.on('click', () => {
+            currentFolderFilter = isAct ? null : folderName;
+            if (currentFolderFilter) {
+                expandedFolders.add(folderName);
+            }
+            renderFileList($('#worldlore_file_search_input').val());
+        });
+        pillsContainer.append(pill);
+    }
+
+    // 3. Root Files Pill if any
+    if (rootFilesCount > 0) {
+        const isAct = currentFolderFilter === '__root__';
+        const rootPill = $(`
+            <div class="worldlore-filter-pill ${isAct ? 'active' : ''}">
+                <i class="fa-solid fa-file"></i>
+                <span>根目录</span>
+                <span class="pill-count">${rootFilesCount}</span>
+            </div>
+        `);
+        rootPill.on('click', () => {
+            currentFolderFilter = isAct ? null : '__root__';
+            renderFileList($('#worldlore_file_search_input').val());
+        });
+        pillsContainer.append(rootPill);
+    }
+}
+
+function renderFileList(query = '') {
+    const container = $('#worldlore_file_list');
+    container.empty();
+    const allFiles = listFiles();
+
+    // Render filter pills
+    renderFolderFilterPills(allFiles);
+
+    // Filter by search query if any
+    let files = allFiles;
+    const lowerQuery = (query || '').toLowerCase().trim();
+    if (lowerQuery) {
+        files = files.filter(f => f.path.toLowerCase().includes(lowerQuery));
+    }
+
+    // Filter by top pill if selected
+    if (currentFolderFilter === '__root__') {
+        files = files.filter(f => !f.path.includes('/'));
+    } else if (currentFolderFilter) {
+        files = files.filter(f => f.path.startsWith(currentFolderFilter + '/') || f.path === currentFolderFilter);
+    }
+
+    if (files.length === 0) {
+        container.html('<div class="worldlore-empty-hint"><i class="fa-solid fa-folder-open"></i><br/><span style="font-size:12px;">无匹配草稿</span></div>');
+        return;
+    }
+
+    const tree = buildFileTree(files);
+
+    // If first load or searching, auto-expand relevant folders
+    if (!folderTreeInitialized || lowerQuery) {
+        for (const [name, folderNode] of tree.folders) {
+            expandedFolders.add(folderNode.path);
+        }
+        if (currentSelectedFile) {
+            ensureFolderExpanded(currentSelectedFile);
+        }
+        if (!lowerQuery) {
+            folderTreeInitialized = true;
+        }
+    }
+
+    // Render tree nodes recursively
+    function renderTreeNode(node, targetEl, depth = 0) {
+        // Render subfolders first
+        const sortedFolderNames = Array.from(node.folders.keys()).sort();
+        for (const fName of sortedFolderNames) {
+            const subNode = node.folders.get(fName);
+            const totalCount = countFilesInTree(subNode);
+            const isExpanded = expandedFolders.has(subNode.path);
+
+            const folderGroup = $(`
+                <div class="worldlore-folder-group" data-folder-path="${escapeHtml(subNode.path)}">
+                    <div class="worldlore-folder-header">
+                        <i class="fa-solid fa-chevron-right folder-chevron ${isExpanded ? 'expanded' : ''}"></i>
+                        <div class="folder-pill-badge" title="点击展开/收起文件夹: ${escapeHtml(subNode.path)}">
+                            <i class="fa-solid ${isExpanded ? 'fa-folder-open' : 'fa-folder'} folder-icon"></i>
+                            <span class="folder-title">${escapeHtml(subNode.name)}</span>
+                            <span class="folder-badge-count">${totalCount}</span>
+                        </div>
+                    </div>
+                    <div class="worldlore-folder-children" style="${isExpanded ? '' : 'display:none;'}"></div>
+                </div>
+            `);
+
+            // Header toggle click
+            folderGroup.find('.worldlore-folder-header').on('click', (e) => {
+                e.stopPropagation();
+                const childrenEl = folderGroup.find('.worldlore-folder-children');
+                const chevron = folderGroup.find('.folder-chevron');
+                const icon = folderGroup.find('.folder-icon');
+
+                if (expandedFolders.has(subNode.path)) {
+                    expandedFolders.delete(subNode.path);
+                    childrenEl.slideUp(140);
+                    chevron.removeClass('expanded');
+                    icon.removeClass('fa-folder-open').addClass('fa-folder');
+                } else {
+                    expandedFolders.add(subNode.path);
+                    childrenEl.slideDown(140);
+                    chevron.addClass('expanded');
+                    icon.removeClass('fa-folder').addClass('fa-folder-open');
+                }
+            });
+
+            const childrenContainer = folderGroup.find('.worldlore-folder-children');
+            renderTreeNode(subNode, childrenContainer, depth + 1);
+            targetEl.append(folderGroup);
+        }
+
+        // Render files in this node
+        const sortedFiles = node.files.sort((a, b) => a.name.localeCompare(b.name));
+        for (const file of sortedFiles) {
+            const canPush = (file.fullPath.startsWith('lorebooks/') || file.fullPath.startsWith('character/') || file.fullPath.startsWith('persona/') || file.fullPath.startsWith('regex/')) && !file.fullPath.endsWith('/meta.json') && file.fullPath !== 'meta.json';
+
+            const actionButtonsHtml = `
+                <div class="file-item-actions">
+                    ${canPush ? `
+                        <button class="file-action-btn quick-push-file-btn fa-solid fa-rocket" title="一键推送到酒馆待确认审核区"></button>
+                        <button class="file-action-btn quick-diff-file-btn fa-solid fa-code-compare" title="对比草稿与酒馆线上版本 (Diff)"></button>
+                    ` : ''}
+                    <button class="file-action-btn quick-rename-file-btn fa-solid fa-pen-to-square" title="重命名草稿"></button>
+                </div>
+            `;
+
+            const item = $(`
+                <div class="worldlore-file-item ${currentSelectedFile === file.fullPath ? 'active' : ''}" data-file-path="${escapeHtml(file.fullPath)}">
+                    <i class="fa-solid fa-file-lines file-icon"></i>
+                    <span class="file-path file-leaf-name" title="${escapeHtml(file.fullPath)}">${escapeHtml(file.name)}</span>
+                    <span class="file-size">${file.length}b</span>
+                    ${actionButtonsHtml}
+                </div>
+            `);
+
+            item.on('click', () => {
+                currentSelectedFile = file.fullPath;
+                $('.worldlore-file-item').removeClass('active');
+                item.addClass('active');
+                loadFileToEditor(file.fullPath);
+            });
+
+            item.find('.quick-rename-file-btn').on('click', (e) => {
+                e.stopPropagation();
+                promptRenameFile(file.fullPath);
+            });
+
+            if (canPush) {
+                item.find('.quick-push-file-btn').on('click', (e) => {
+                    e.stopPropagation();
+                    pushDraftFileToStaging(file.fullPath);
+                });
+
+                item.find('.quick-diff-file-btn').on('click', (e) => {
+                    e.stopPropagation();
+                    diffDraftFileWithST(file.fullPath);
+                });
+            }
+
+            targetEl.append(item);
+        }
+    }
+
+    renderTreeNode(tree, container, 0);
+}
+
 function loadFileToEditor(path) {
+    ensureFolderExpanded(path);
     const content = readFile(path);
     if (content !== null) {
         $('#worldlore_editor_filename').text(path);
         $('#worldlore_cur_file_name').text(path);
         $('#worldlore_file_editor').val(content);
-        $('#worldlore_save_file_btn, #worldlore_delete_file_btn, #worldlore_push_editor_file_btn, #worldlore_diff_editor_file_btn').show();
+        $('#worldlore_save_file_btn, #worldlore_delete_file_btn, #worldlore_rename_file_btn, #worldlore_push_editor_file_btn, #worldlore_diff_editor_file_btn').show();
     }
 }
 
