@@ -631,12 +631,12 @@ function createDrawer() {
 
                 <!-- Full-Height Editor Body -->
                 <div class="worldlore-editor-full-container">
-                    <div class="worldlore-editor-header" style="display:flex; flex-direction:column; gap:6px; margin-bottom:8px; width:100%; box-sizing:border-box;">
-                        <div class="editor-filename-wrap" style="display:flex; align-items:center; width:100%; min-width:0; gap:6px; color:var(--wl-accent); box-sizing:border-box;">
-                            <i class="fa-solid fa-pen-to-square" style="flex-shrink:0;"></i>
+                    <div class="worldlore-editor-header" style="display:flex; flex-direction:row; align-items:center; justify-content:space-between; gap:6px; margin-bottom:6px; width:100%; min-width:0; flex-wrap:nowrap; box-sizing:border-box;">
+                        <div class="editor-filename-wrap" style="display:flex; align-items:center; min-width:0; flex:1 1 0; overflow:hidden; gap:5px; color:var(--wl-accent); box-sizing:border-box;">
+                            <i class="fa-solid fa-pen-to-square" style="flex-shrink:0; font-size:12px;"></i>
                             <span id="worldlore_editor_filename" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; font-size:12px; min-width:0; flex:1;" title="当前编辑的文件路径">world/overview.md</span>
                         </div>
-                        <div class="worldlore-editor-actions" style="display:flex; align-items:center; justify-content:flex-end; gap:6px; width:100%; flex-wrap:nowrap; box-sizing:border-box;">
+                        <div class="worldlore-editor-actions" style="display:flex; align-items:center; justify-content:flex-end; gap:4px; flex-shrink:0; flex-wrap:nowrap; box-sizing:border-box;">
                             <button id="worldlore_push_editor_file_btn" class="menu_button primary fa-solid fa-rocket" title="一键推送到酒馆待确认审核区"></button>
                             <button id="worldlore_diff_editor_file_btn" class="menu_button fa-solid fa-code-compare" title="对比草稿与酒馆线上版本 (Diff)"></button>
                             <button id="worldlore_preview_html_btn" class="menu_button fa-solid fa-eye" title="前端预览 HTML / 正则渲染效果"></button>
@@ -655,8 +655,11 @@ function createDrawer() {
                                 </button>
                                 <code class="regex-test-pattern" id="wl_preview_pattern_display" style="display:inline-block; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title=""></code>
                             </div>
-                            <div class="preview-tb-right" style="display:inline-flex; flex-direction:row; align-items:center; gap:6px; flex-wrap:nowrap;">
+                            <div class="preview-tb-right" style="display:inline-flex; flex-direction:row; align-items:center; gap:6px; flex-wrap:nowrap; flex-shrink:0;">
                                 <span class="regex-test-match-badge" id="wl_preview_match_badge"></span>
+                                <button class="menu_button preview-tb-btn" id="wl_preview_fill_mock_btn" title="一键填充模拟对话数据">
+                                    <i class="fa-solid fa-wand-magic-sparkles"></i> 示例数据
+                                </button>
                             </div>
                         </div>
                         <div class="in-drawer-regex-test-bar" id="wl_preview_regex_test_bar" style="display:none; flex-direction:column; gap:6px; padding:6px 10px;">
@@ -1169,6 +1172,21 @@ function bindEvents() {
     });
 
 
+
+
+    // Fill mock data
+    $('#wl_preview_fill_mock_btn').on('click', () => {
+        if (!inDrawerRegexMeta?.findRegex) return;
+        const mock = generateMockTextFromRegex(inDrawerRegexMeta.findRegex);
+        $('#wl_preview_test_input').val(mock);
+        // Ensure test bar is open so user sees mock data
+        const testBar = $('#wl_preview_regex_test_bar');
+        if (!testBar.hasClass('open')) {
+            testBar.addClass('open');
+            $('#wl_preview_test_toggle_btn').addClass('active');
+        }
+        updateInDrawerPreview();
+    });
 
     // Live update when typing in test input
     $('#wl_preview_test_input').on('input', () => {
