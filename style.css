@@ -77,7 +77,7 @@
 /* 圆形悬浮球 (High-Performance GPU-Docked Ball) */
 .worldlore-ball {
     position: fixed;
-    z-index: 999999;
+    z-index: 2500;
     user-select: none;
     -webkit-user-select: none;
     touch-action: none;
@@ -153,7 +153,7 @@
     bottom: 0;
     background: rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(2px);
-    z-index: 999999;
+    z-index: 2800;
     opacity: 0;
     pointer-events: none;
     will-change: opacity;
@@ -178,7 +178,7 @@
     color: var(--wl-text-main);
     border-left: 1px solid var(--wl-border);
     box-shadow: -8px 0 30px var(--wl-shadow);
-    z-index: 1000000;
+    z-index: 2900;
     display: flex;
     flex-direction: column;
     transform: translate3d(105%, 0, 0);
@@ -971,7 +971,7 @@
 
 .worldlore-qr-popover {
     position: fixed;
-    z-index: 999999;
+    z-index: 2950;
     display: none;
     flex-direction: column;
     width: 295px;
@@ -1678,3 +1678,19 @@
     margin: 0 !important;
 }
 
+/* ==========================================================================
+   确保酒馆系统原生弹窗与 Toastr 提示消息始终在扩展面板之上
+   ========================================================================== */
+body > #toast-container,
+#toast-container {
+    z-index: 999999 !important;
+}
+
+.popup,
+.popper-modal,
+#dialogue_popup,
+.dialogue_popup,
+.large_dialogue_popup,
+.popup-frame {
+    z-index: 99999 !important;
+}
