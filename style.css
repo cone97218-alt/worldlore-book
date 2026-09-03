@@ -2388,9 +2388,11 @@ body > #toast-container,
     display: inline-flex !important;
     flex-direction: row !important;
     align-items: center !important;
+    justify-content: center !important;
+    min-width: 24px !important;
     gap: 4px !important;
     white-space: nowrap !important;
-    padding: 3px 8px !important;
+    padding: 3px 6px !important;
     font-size: 11px !important;
     line-height: 1 !important;
     height: 24px !important;

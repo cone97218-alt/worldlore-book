@@ -398,9 +398,11 @@ const IN_DRAWER_PREVIEW_INJECTED_CSS = `
     display: inline-flex !important;
     flex-direction: row !important;
     align-items: center !important;
+    justify-content: center !important;
+    min-width: 24px !important;
     gap: 4px !important;
     white-space: nowrap !important;
-    padding: 3px 8px !important;
+    padding: 3px 6px !important;
     font-size: 11px !important;
     line-height: 1 !important;
     height: 24px !important;
@@ -650,16 +652,12 @@ function createDrawer() {
                     <div id="worldlore_editor_preview_container" class="worldlore-in-drawer-preview displayNone" style="display:none; width:100%; flex:1; min-height:460px; height:100%; flex-direction:column; box-sizing:border-box;">
                         <div class="in-drawer-preview-toolbar" id="wl_preview_top_bar" style="display:flex; flex-direction:row; align-items:center; justify-content:space-between; padding:6px 10px; gap:8px; flex-wrap:nowrap; flex-shrink:0;">
                             <div class="preview-tb-left" style="display:inline-flex; flex-direction:row; align-items:center; gap:6px; flex-wrap:nowrap;">
-                                <button class="menu_button preview-tb-btn" id="wl_preview_test_toggle_btn" title="展开/收起正则模拟联调测试框">
-                                    <i class="fa-solid fa-flask"></i> 联调
-                                </button>
+                                <button class="menu_button preview-tb-btn fa-solid fa-flask" id="wl_preview_test_toggle_btn" title="展开/收起正则模拟联调测试框"></button>
                                 <code class="regex-test-pattern" id="wl_preview_pattern_display" style="display:inline-block; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title=""></code>
                             </div>
                             <div class="preview-tb-right" style="display:inline-flex; flex-direction:row; align-items:center; gap:6px; flex-wrap:nowrap; flex-shrink:0;">
                                 <span class="regex-test-match-badge" id="wl_preview_match_badge"></span>
-                                <button class="menu_button preview-tb-btn" id="wl_preview_fill_mock_btn" title="一键填充模拟对话数据">
-                                    <i class="fa-solid fa-wand-magic-sparkles"></i> 示例数据
-                                </button>
+                                <button class="menu_button preview-tb-btn fa-solid fa-wand-magic-sparkles" id="wl_preview_fill_mock_btn" title="一键填充模拟对话数据"></button>
                             </div>
                         </div>
                         <div class="in-drawer-regex-test-bar" id="wl_preview_regex_test_bar" style="display:none; flex-direction:column; gap:6px; padding:6px 10px;">
