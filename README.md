@@ -74,5 +74,14 @@ git clone https://github.com/cone97218-alt/worldlore-book.git worldlore-agent
 
 ---
 
+## 📝 更新日志
+
+### v1.1.0
+- **新增内置专属预设**：官方内置 `写卡助手0.3` 专属预设，包含 31 组 Prompts 与 `<agent_action>` 正则折叠渲染脚本；
+- **扩展设置一键导入**：在抽屉设置界面新增「A助手预设」一键导入按钮，安装后可直接将官方预设导入并激活至酒馆预设列表中；
+- **架构重构与优化**：模块化重构内部目录结构，优化 ES Module 导出与依赖加载稳定性。
+
+---
+
 ## 📄 开源许可
 MIT License

@@ -1,6 +1,6 @@
 import { eventSource, event_types } from '/script.js';
-import { getSettings, readFile } from './workspace.js';
-import { getCurrentCharacter, getCurrentPersona, readLorebookEntriesScoped } from './st-sync.js';
+import { getSettings, readFile } from '../core/workspace.js';
+import { getCurrentCharacter, getCurrentPersona, readLorebookEntriesScoped } from '../st/st-sync.js';
 
 /**
  * Expands concise reference tags (e.g. [草稿: world/xxx.md]) in text into their full actual content.

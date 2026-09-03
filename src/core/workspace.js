@@ -177,6 +177,50 @@ export function readFile(filePath) {
     return project.files[path].content;
 }
 
+export function readFileSlice(filePath, startLine = null, endLine = null, withLineNumbers = true) {
+    const rawContent = readFile(filePath);
+    if (rawContent === null) return null;
+
+    const lines = rawContent.split(/\r?\n/);
+    const totalLines = lines.length;
+
+    if (startLine === null && endLine === null) {
+        return {
+            content: rawContent,
+            totalLines,
+            isSliced: false,
+            startLine: 1,
+            endLine: totalLines,
+            chars: rawContent.length
+        };
+    }
+
+    const sLine = Math.max(1, parseInt(startLine, 10) || 1);
+    const eLine = Math.min(totalLines, Math.max(sLine, parseInt(endLine, 10) || totalLines));
+
+    const sliceArr = lines.slice(sLine - 1, eLine);
+    let slicedContent = '';
+    if (withLineNumbers) {
+        const padLen = String(eLine).length;
+        slicedContent = sliceArr
+            .map((line, idx) => `${String(sLine + idx).padStart(padLen, ' ')}: ${line}`)
+            .join('\n');
+    } else {
+        slicedContent = sliceArr.join('\n');
+    }
+
+    return {
+        content: slicedContent,
+        rawSlice: sliceArr.join('\n'),
+        totalLines,
+        isSliced: true,
+        startLine: sLine,
+        endLine: eLine,
+        sliceLinesCount: sliceArr.length,
+        chars: slicedContent.length
+    };
+}
+
 export function deleteFile(filePath) {
     const project = getActiveProject();
     const path = normalizePath(filePath);
@@ -205,20 +249,48 @@ export function listFiles(prefix = '') {
     return result.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function searchFiles(query) {
+export function searchFiles(query, options = {}) {
     if (!query) return [];
     const project = getActiveProject();
     const results = [];
-    const lowerQuery = query.toLowerCase();
+    const lowerQuery = String(query).toLowerCase();
+    
+    // Support options as string (pathFilter) or object ({ path, maxResults })
+    const pathFilter = typeof options === 'string' ? options : (options?.path || options?.prefix || '');
+    const maxResultsPerFile = typeof options === 'object' && options?.maxResults ? options.maxResults : 50;
 
-    for (const [path, file] of Object.entries(project.files || {})) {
-        const pathMatches = path.toLowerCase().includes(lowerQuery);
+    for (const [rawPath, file] of Object.entries(project.files || {})) {
+        const path = normalizePath(rawPath);
+        if (pathFilter && !path.startsWith(normalizePath(pathFilter)) && path !== normalizePath(pathFilter)) {
+            continue;
+        }
+
         const content = file.content || '';
-        const contentLower = content.toLowerCase();
-        const contentIndex = contentLower.indexOf(lowerQuery);
+        const lowerContent = content.toLowerCase();
+        const pathMatches = path.toLowerCase().includes(lowerQuery);
+        const hasContentMatch = lowerContent.includes(lowerQuery);
 
-        if (pathMatches || contentIndex !== -1) {
+        if (pathMatches || hasContentMatch) {
+            const lines = content.split(/\r?\n/);
+            const totalLines = lines.length;
+            const lineMatches = [];
+
+            if (hasContentMatch) {
+                for (let i = 0; i < lines.length; i++) {
+                    const lineText = lines[i];
+                    if (lineText.toLowerCase().includes(lowerQuery)) {
+                        lineMatches.push({
+                            line: i + 1,
+                            content: lineText.length > 300 ? lineText.substring(0, 300) + '...' : lineText
+                        });
+                        if (lineMatches.length >= maxResultsPerFile) break;
+                    }
+                }
+            }
+
+            // Also provide a concise snippet for backward compatibility
             let snippet = '';
+            const contentIndex = lowerContent.indexOf(lowerQuery);
             if (contentIndex !== -1) {
                 const start = Math.max(0, contentIndex - 60);
                 const end = Math.min(content.length, contentIndex + query.length + 60);
@@ -230,6 +302,9 @@ export function searchFiles(query) {
             results.push({
                 path,
                 pathMatches,
+                totalLines,
+                matchesCount: lineMatches.length,
+                matches: lineMatches,
                 snippet,
                 length: content.length,
             });

@@ -143,3 +143,23 @@ export function showDiffModal(title, oldText = '', newText = '') {
     });
     popup.show();
 }
+
+/**
+ * In-memory registry for full diffs to avoid sending thousands of tokens back to the LLM.
+ */
+const DIFF_REGISTRY = new Map();
+
+export function storeDiff(oldText, newText, title = '') {
+    const diffId = 'diff_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    if (DIFF_REGISTRY.size > 200) {
+        const firstKey = DIFF_REGISTRY.keys().next().value;
+        DIFF_REGISTRY.delete(firstKey);
+    }
+    DIFF_REGISTRY.set(diffId, { oldText, newText, title, time: Date.now() });
+    return diffId;
+}
+
+export function getStoredDiff(diffId) {
+    return DIFF_REGISTRY.get(diffId) || null;
+}
+

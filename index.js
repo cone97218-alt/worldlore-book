@@ -1,10 +1,11 @@
 import { eventSource, event_types } from '/script.js';
 import { getContext } from '/scripts/extensions.js';
-import { registerAllToolsWithToolManager } from './src/tools.js';
-import { parseAndExecuteActions } from './src/parser.js';
-import { initUI, updateStagingCounter } from './src/ui.js';
-import { initPromptInjector } from './src/injector.js';
-import { initPromptSanitizer } from './src/sanitizer.js';
+import { MacrosParser } from '/scripts/macros.js';
+import { registerAllToolsWithToolManager, getTextModeToolsPrompt } from './src/tools/index.js';
+import { parseAndExecuteActions } from './src/utils/parser.js';
+import { initUI, updateStagingCounter } from './src/ui/ui.js';
+import { initPromptInjector } from './src/utils/injector.js';
+import { initPromptSanitizer } from './src/utils/sanitizer.js';
 
 jQuery(async () => {
     console.log('[Worldlore Agent] Initializing extension A助手...');
@@ -15,10 +16,25 @@ jQuery(async () => {
     // 2. Register native function tools into SillyTavern ToolManager
     registerAllToolsWithToolManager();
 
-    // 3. Initialize Prompt Reference Injector (dynamically expands [草稿: xxx] into file content for LLM)
+    // 3. Register global macro {{worldlore_tools}} for text mode presets
+    try {
+        if (typeof MacrosParser !== 'undefined' && typeof MacrosParser.registerMacro === 'function') {
+            MacrosParser.registerMacro('worldlore_tools', () => {
+                return getTextModeToolsPrompt();
+            }, 'A助手已勾选的文本模式工具列表与调用格式');
+            MacrosParser.registerMacro('worldlore_agent_tools', () => {
+                return getTextModeToolsPrompt();
+            }, 'A助手已勾选的文本模式工具列表与调用格式');
+            console.log('[Worldlore Agent] Registered global macro {{worldlore_tools}}');
+        }
+    } catch (e) {
+        console.warn('[Worldlore Agent] Could not register macro with MacrosParser:', e);
+    }
+
+    // 4. Initialize Prompt Reference Injector (dynamically expands [草稿: xxx] into file content for LLM)
     initPromptInjector();
 
-    // 4. Initialize Route A Prompt Context Sanitizer (dynamically strips historical tool calls before sending to API)
+    // 5. Initialize Route A Prompt Context Sanitizer (dynamically strips historical tool calls before sending to API)
     initPromptSanitizer();
 
     // 3. Listen to message rendering to support Dual-Mode parsing (Text/Tag fallback for DeepSeek, etc.)

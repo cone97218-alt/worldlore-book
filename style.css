@@ -420,6 +420,57 @@
     flex-shrink: 0;
 }
 
+.workspace-quick-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 0;
+    margin-bottom: 2px;
+}
+
+.workspace-quick-toolbar .menu_button {
+    padding: 5px 8px;
+    font-size: 12px;
+    border-radius: 4px;
+}
+
+.workspace-quick-toolbar .quick-toolbar-divider {
+    width: 1px;
+    height: 16px;
+    background: var(--wl-border);
+    margin: 0 3px;
+}
+
+.file-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: auto;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+}
+
+.worldlore-file-item:hover .file-item-actions {
+    opacity: 1;
+}
+
+.file-action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 3px 5px;
+    font-size: 11px;
+    border-radius: 3px;
+    color: var(--wl-text-main);
+    transition: all 0.15s;
+}
+
+.file-action-btn:hover {
+    background: rgba(0, 0, 0, 0.1);
+    transform: scale(1.1);
+}
+
+
 /* FULLSCREEN MAXIMIZED EDITOR */
 .worldlore-editor-full-container {
     flex: 1;
@@ -1222,5 +1273,408 @@
     background: rgba(46, 204, 113, 0.15);
     color: #7ee787;
     border: 1px solid rgba(46, 204, 113, 0.3);
+}
+
+/* Tools manager in Settings Tab */
+.worldlore-tools-manager-section {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.tools-manager-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    gap: 12px;
+    width: 100%;
+}
+
+.tools-manager-actions {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.tools-manager-actions .text-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
+    line-height: 1.2;
+}
+
+.worldlore-tools-checkbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 460px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.tool-group-card {
+    background: var(--wl-bg-sub);
+    border: 1px solid var(--wl-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+
+.tool-group-title {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--wl-text-main);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0.9;
+}
+
+.tool-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.tool-checkbox-item:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.tool-checkbox-item input[type="checkbox"] {
+    cursor: pointer;
+    margin: 0;
+}
+
+.tool-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    overflow: hidden;
+}
+
+.tool-item-name {
+    font-weight: bold;
+    font-size: 12px;
+    color: var(--wl-text-main);
+    font-family: monospace, Consolas;
+}
+
+.tool-item-desc {
+    font-size: 11px;
+    opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Macro Code Pill & Row */
+.macro-badge-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    margin-top: 6px;
+}
+
+.macro-code-pill {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--wl-bg-sub, rgba(0, 0, 0, 0.2));
+    border: 1px solid var(--wl-border, rgba(255, 255, 255, 0.15));
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s ease;
+    white-space: nowrap !important;
+    font-family: monospace, Consolas;
+    font-size: 13px;
+    color: var(--wl-text-main, #e0e0e0);
+}
+
+.macro-code-pill:hover {
+    background: rgba(0, 240, 255, 0.12);
+    border-color: #00f0ff;
+    color: #00f0ff;
+    transform: translateY(-1px);
+}
+
+.macro-code-pill code {
+    background: none !important;
+    padding: 0 !important;
+.worldlore-diff-ins {
+    background-color: rgba(46, 204, 113, 0.28) !important;
+    color: #a3f7ab !important;
+    text-decoration: none !important;
+    border-radius: 2px;
+    padding: 1px 3px;
+}
+
+.worldlore-diff-split-view {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+}
+
+.worldlore-diff-split-col {
+    flex: 1 1 50%;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    text-align: left !important;
+    writing-mode: horizontal-tb !important;
+}
+
+.worldlore-diff-split-header {
+    font-size: 12px;
+    font-weight: bold;
+    padding: 4px 8px;
+    margin-bottom: 6px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-align: left !important;
+    justify-content: flex-start !important;
+    writing-mode: horizontal-tb !important;
+}
+
+.worldlore-diff-split-col.col-old .worldlore-diff-split-header {
+    background: rgba(231, 76, 60, 0.15);
+    color: #ff7b72;
+    border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+.worldlore-diff-split-col.col-new .worldlore-diff-split-header {
+    background: rgba(46, 204, 113, 0.15);
+    color: #7ee787;
+    border: 1px solid rgba(46, 204, 113, 0.3);
+}
+
+/* Tools manager in Settings Tab */
+.worldlore-tools-manager-section {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.tools-manager-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    gap: 12px;
+    width: 100%;
+}
+
+.tools-manager-actions {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.tools-manager-actions .text-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 48px;
+    line-height: 1.2;
+}
+
+.worldlore-tools-checkbox-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 460px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.tool-group-card {
+    background: var(--wl-bg-sub);
+    border: 1px solid var(--wl-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+
+.tool-group-title {
+    font-size: 12px;
+    font-weight: bold;
+    color: var(--wl-text-main);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0.9;
+}
+
+.tool-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.tool-checkbox-item:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.tool-checkbox-item input[type="checkbox"] {
+    cursor: pointer;
+    margin: 0;
+}
+
+.tool-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    overflow: hidden;
+}
+
+.tool-item-name {
+    font-weight: bold;
+    font-size: 12px;
+    color: var(--wl-text-main);
+    font-family: monospace, Consolas;
+}
+
+.tool-item-desc {
+    font-size: 11px;
+    opacity: 0.7;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Macro Code Pill & Row */
+.macro-badge-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    margin-top: 6px;
+}
+
+.macro-code-pill {
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--wl-bg-sub, rgba(0, 0, 0, 0.2));
+    border: 1px solid var(--wl-border, rgba(255, 255, 255, 0.15));
+    border-radius: 6px;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s ease;
+    white-space: nowrap !important;
+    font-family: monospace, Consolas;
+    font-size: 13px;
+    color: var(--wl-text-main, #e0e0e0);
+}
+
+.macro-code-pill:hover {
+    background: rgba(0, 240, 255, 0.12);
+    border-color: #00f0ff;
+    color: #00f0ff;
+    transform: translateY(-1px);
+}
+
+.macro-code-pill code {
+    background: none !important;
+    padding: 0 !important;
+    font-size: 13px !important;
+    color: inherit !important;
+    white-space: nowrap !important;
+}
+
+.macro-code-pill i {
+    font-size: 12px;
+    opacity: 0.85;
+}
+
+/* ==========================================================================
+   A助手 预设导入栏 (Preset Bar)
+   ========================================================================== */
+.worldlore-preset-simple-bar {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 6px 12px !important;
+    margin-bottom: 12px !important;
+    background: var(--wl-bg-sub, rgba(0, 0, 0, 0.12)) !important;
+    border: 1px solid var(--wl-border, rgba(255, 255, 255, 0.1)) !important;
+    border-radius: 6px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+    writing-mode: horizontal-tb !important;
+}
+
+.worldlore-preset-btn {
+    display: inline-flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    width: auto !important;
+    min-width: max-content !important;
+    height: auto !important;
+    min-height: 28px !important;
+    padding: 4px 12px !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    writing-mode: horizontal-tb !important;
+    cursor: pointer !important;
+}
+
+.worldlore-preset-btn i {
+    display: inline-block !important;
+    font-size: 12px !important;
+    line-height: 1 !important;
+    margin: 0 !important;
+    flex-shrink: 0 !important;
+}
+
+.worldlore-preset-btn span {
+    display: inline-block !important;
+    white-space: nowrap !important;
+    writing-mode: horizontal-tb !important;
+    line-height: 1 !important;
+    margin: 0 !important;
 }
 

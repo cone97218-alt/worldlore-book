@@ -1,5 +1,5 @@
-﻿import { eventSource, event_types } from '/script.js';
-import { getSettings } from './workspace.js';
+import { eventSource, event_types } from '/script.js';
+import { getSettings } from '../core/workspace.js';
 
 /**
  * Prompt Context Sanitizer (Route A)

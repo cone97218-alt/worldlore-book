@@ -1,9 +1,63 @@
-import { getSettings, saveWorkspace, getProjects, getActiveProjectName, getActiveProject, createProject, switchProject, deleteProject, listFiles, readFile, writeFile, deleteFile, exportProjectData, importProjectData } from './workspace.js';
-import { getStagingEntries, removeStagingEntry, clearStaging, applyStagingEntry, applyAllStaging, getHistoryEntries, undoHistoryRecord, redoHistoryRecord, restageHistoryRecord, clearHistory, getToolDocumentationPrompt, setToolMode } from './tools.js';
-import { getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview, readLorebookEntriesScoped } from './st-sync.js';
+import { getSettings, saveWorkspace, getProjects, getActiveProjectName, getActiveProject, createProject, switchProject, deleteProject, listFiles, readFile, writeFile, deleteFile, exportProjectData, importProjectData } from '../core/workspace.js';
+import { getStagingEntries, removeStagingEntry, clearStaging, applyStagingEntry, applyAllStaging, getHistoryEntries, undoHistoryRecord, redoHistoryRecord, restageHistoryRecord, clearHistory, getToolDocumentationPrompt, setToolMode, addStagingEntry, addHistoryRecord, isToolEnabled, setToolEnabled, TOOL_DEFINITIONS } from '../tools/index.js';
+import { getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview, readLorebookEntriesScoped } from '../st/st-sync.js';
+import { importLorebookToWorkspace, importCharacterToWorkspace, importPersonaToWorkspace, parseFrontmatter, formatFrontmatter } from '../st/import-sync.js';
+import { getRegexScripts, findRegexScript } from '../st/regex-sync.js';
+import { loadWorldInfo } from '/scripts/world-info.js';
 import { eventSource, event_types } from '/script.js';
-import { Popup } from '/scripts/popup.js';
-import { showDiffModal } from './diff.js';
+import { Popup, POPUP_TYPE } from '/scripts/popup.js';
+import { showDiffModal } from '../utils/diff.js';
+import { importBundledPresetToSillyTavern } from '../st/preset-sync.js';
+
+/**
+ * Renders a clean dropdown select dialog via SillyTavern's Popup
+ * @param {object} params
+ * @param {string} params.title
+ * @param {string} params.message
+ * @param {Array<{value: string, label: string}>} params.options
+ * @param {string} [params.defaultVal]
+ * @returns {Promise<string|null>}
+ */
+export async function showSelectModal({ title = '请选择', message = '请选择目标项：', options = [], defaultVal = '' }) {
+    if (!options || options.length === 0) return null;
+    const container = document.createElement('div');
+    container.style.cssText = 'display:flex; flex-direction:column; gap:12px; min-width:340px; font-size:13px; text-align:left;';
+
+    const titleEl = document.createElement('div');
+    titleEl.innerHTML = `<strong style="font-size:15px;">${title}</strong>`;
+    container.appendChild(titleEl);
+
+    const msgEl = document.createElement('div');
+    msgEl.innerText = message;
+    msgEl.style.opacity = '0.85';
+    container.appendChild(msgEl);
+
+    const select = document.createElement('select');
+    select.className = 'text_pole';
+    select.style.cssText = 'width:100%; padding:8px 10px; border-radius:5px; box-sizing:border-box;';
+
+    for (const opt of options) {
+        const optionEl = document.createElement('option');
+        optionEl.value = opt.value;
+        optionEl.textContent = opt.label;
+        if (opt.value === defaultVal) {
+            optionEl.selected = true;
+        }
+        select.appendChild(optionEl);
+    }
+    container.appendChild(select);
+
+    const popup = new Popup(container, POPUP_TYPE.CONFIRM, '', {
+        okButton: '确定',
+        cancelButton: '取消',
+    });
+
+    const res = await popup.show();
+    if (res) {
+        return select.value;
+    }
+    return null;
+}
 
 let currentSelectedFile = null;
 let lastToggleTime = 0;
@@ -291,8 +345,8 @@ function createDrawer() {
                 <button class="worldlore-tab-btn" data-tab="history" title="操作日志与撤回">
                     <i class="fa-solid fa-clock-rotate-left"></i>
                 </button>
-                <button class="worldlore-tab-btn" data-tab="guide" title="提示词指南">
-                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                <button class="worldlore-tab-btn" data-tab="guide" title="扩展设置与工具管理">
+                    <i class="fa-solid fa-sliders"></i>
                 </button>
             </div>
             <div class="worldlore-header-actions">
@@ -330,6 +384,16 @@ function createDrawer() {
                             <input type="file" id="worldlore_import_file_input" style="display:none;" accept=".json" />
                         </div>
 
+                        <!-- Pure Icon Quick Pull & Template Toolbar -->
+                        <div class="workspace-quick-toolbar">
+                            <button id="worldlore_quick_pull_lorebook_btn" class="menu_button fa-solid fa-book-bookmark" title="拉取当前世界书到工坊 (方案C)"></button>
+                            <button id="worldlore_quick_pull_character_btn" class="menu_button fa-solid fa-user-tag" title="拉取当前角色卡设定到工坊"></button>
+                            <button id="worldlore_quick_pull_persona_btn" class="menu_button fa-solid fa-user-pen" title="拉取当前用户人设到工坊"></button>
+                            <button id="worldlore_quick_pull_regex_btn" class="menu_button fa-solid fa-code" title="拉取酒馆正则脚本到工坊"></button>
+                            <div class="quick-toolbar-divider"></div>
+                            <button id="worldlore_quick_new_template_btn" class="menu_button fa-solid fa-file-circle-plus" title="新建标准草稿模板 (世界书/正则)"></button>
+                        </div>
+
                         <!-- Search file -->
                         <input type="text" id="worldlore_file_search_input" class="worldlore-input" placeholder="搜索草稿文件..." />
 
@@ -346,7 +410,9 @@ function createDrawer() {
                             <span id="worldlore_editor_filename">world/overview.md</span>
                         </div>
                         <div class="worldlore-editor-actions">
-                            <button id="worldlore_save_file_btn" class="menu_button primary fa-solid fa-floppy-disk" title="保存草稿"></button>
+                            <button id="worldlore_push_editor_file_btn" class="menu_button primary fa-solid fa-rocket" title="一键推送到酒馆待确认审核区"></button>
+                            <button id="worldlore_diff_editor_file_btn" class="menu_button fa-solid fa-code-compare" title="对比草稿与酒馆线上版本 (Diff)"></button>
+                            <button id="worldlore_save_file_btn" class="menu_button fa-solid fa-floppy-disk" title="保存草稿"></button>
                             <button id="worldlore_delete_file_btn" class="menu_button fa-solid fa-trash" title="删除草稿"></button>
                         </div>
                     </div>
@@ -381,32 +447,62 @@ function createDrawer() {
                 <div id="worldlore_history_list" class="worldlore-history-list"></div>
             </div>
 
-            <!-- TAB 4: PROMPT GUIDE -->
+            <!-- TAB 4: SETTINGS & TOOLS MANAGER -->
             <div class="worldlore-tab-pane" id="worldlore_pane_guide">
                 <div class="worldlore-guide-container">
                     <div class="worldlore-guide-header">
-                        <i class="fa-solid fa-circle-info"></i>
-                        <span class="worldlore-nowrap-text">A助手 指南</span>
+                        <i class="fa-solid fa-sliders"></i>
+                        <span class="worldlore-nowrap-text">A助手 扩展设置</span>
                     </div>
 
-                    <div class="worldlore-section-label worldlore-nowrap-text">工具调用模式</div>
+                    <!-- PRESET IMPORT -->
+                    <div class="worldlore-preset-simple-bar" style="display:flex !important; flex-direction:row !important; align-items:center !important; justify-content:space-between !important; width:100% !important; margin:6px 0 10px 0 !important; box-sizing:border-box !important;">
+                        <span class="worldlore-nowrap-text" style="font-size:13px !important; font-weight:600 !important; white-space:nowrap !important; margin:0 !important; line-height:1 !important;">A助手预设</span>
+                        <button id="worldlore_import_preset_btn" class="menu_button worldlore-preset-btn" style="display:inline-flex !important; flex-direction:row !important; align-items:center !important; justify-content:center !important; gap:6px !important; white-space:nowrap !important; width:auto !important; min-width:max-content !important; height:auto !important; min-height:28px !important; padding:4px 12px !important; font-size:12px !important; margin:0 !important; line-height:1 !important; cursor:pointer !important;" title="导入内置预设到酒馆">
+                            <i class="fa-solid fa-file-import" style="margin:0 !important; font-size:12px !important; line-height:1 !important;"></i>
+                            <span class="worldlore-nowrap-text" style="margin:0 !important; white-space:nowrap !important; line-height:1 !important;">导入预设</span>
+                        </button>
+                    </div>
+
+                    <div class="worldlore-section-label worldlore-nowrap-text">工具运行模式</div>
                     <div class="worldlore-mode-toggle" id="worldlore_mode_toggle">
-                        <button id="worldlore_mode_native_btn" class="menu_button worldlore-mode-btn" title="原生 Function Calling 模式（工具调用走 API 协议，有 Role:tool 历史注入）">
+                        <button id="worldlore_mode_native_btn" class="menu_button worldlore-mode-btn" title="原生 Function Calling 模式 (走 API 协议)">
                             <i class="fa-solid fa-plug"></i>
                         </button>
-                        <button id="worldlore_mode_text_btn" class="menu_button worldlore-mode-btn" title="文本标签模式（AI 输出 &lt;agent_action&gt; 标签，本地执行，零上下文注入）">
+                        <button id="worldlore_mode_text_btn" class="menu_button worldlore-mode-btn" title="文本标签模式 (<agent_action> 标签)">
                             <i class="fa-solid fa-tag"></i>
                         </button>
                     </div>
                     <div id="worldlore_mode_label" class="worldlore-mode-label worldlore-nowrap-text"></div>
 
-                    <p>点击下方按钮可一键复制工具说明并粘贴至 System Prompt 或预设（内容随模式自动更新）：</p>
-                    
-                    <div class="worldlore-copy-box">
-                        <button id="worldlore_copy_prompt_btn" class="menu_button primary fa-solid fa-copy" title="一键复制完整工具说明 (Copy Tool Prompt)"></button>
+                    <!-- TOOLS CHECKBOX SECTION (有条理地列出可使用工具供勾选) -->
+                    <div class="worldlore-tools-manager-section">
+                        <div class="tools-manager-header">
+                            <span class="worldlore-section-label worldlore-nowrap-text" style="margin:0;">可用 AI 工具管理</span>
+                            <div class="tools-manager-actions">
+                                <button id="worldlore_select_all_tools_btn" class="menu_button text-btn" title="全部启用">全选</button>
+                                <button id="worldlore_deselect_all_tools_btn" class="menu_button text-btn" title="全部禁用">清空</button>
+                            </div>
+                        </div>
+                        <div id="worldlore_tools_checkbox_list" class="worldlore-tools-checkbox-list"></div>
                     </div>
 
-                    <div class="worldlore-status-summary">
+                    <!-- 文本模式提示词与全局宏区域（原生模式下彻底隐藏） -->
+                    <div id="worldlore_copy_prompt_section" style="display:none; margin-top:14px;">
+                        <div class="worldlore-section-label worldlore-nowrap-text">文本模式预设宏与提示词</div>
+                        <p style="font-size:12px; opacity:0.85; margin-bottom:8px; line-height:1.5;">
+                            已自动注册酒馆全局宏 <code>{{worldlore_tools}}</code>，可直接在预设任意位置插入！发送时将根据上方勾选的工具实时动态注入。
+                        </p>
+                        <div class="macro-badge-row">
+                            <div id="worldlore_copy_macro_btn" class="macro-code-pill" title="点击一键复制宏标记 {{worldlore_tools}}">
+                                <code>{{worldlore_tools}}</code>
+                                <i class="fa-regular fa-copy"></i>
+                            </div>
+                            <button id="worldlore_copy_prompt_btn" class="menu_button primary fa-solid fa-file-code" title="一键复制当前勾选工具生成的完整提示词"></button>
+                        </div>
+                    </div>
+
+                    <div class="worldlore-status-summary" style="margin-top:14px;">
                         <div class="summary-item"><i class="fa-solid fa-user"></i> <span id="worldlore_stat_char" class="worldlore-nowrap-text">未选定</span></div>
                         <div class="summary-item"><i class="fa-solid fa-user-gear"></i> <span id="worldlore_stat_persona" class="worldlore-nowrap-text">默认</span></div>
                         <div class="summary-item"><i class="fa-solid fa-book"></i> <span id="worldlore_stat_wi" class="worldlore-nowrap-text">0 本</span></div>
@@ -543,7 +639,276 @@ function bindEvents() {
             $('#worldlore_file_editor').val('');
             $('#worldlore_editor_filename').text('未选择文件');
             $('#worldlore_cur_file_name').text('未选择');
-            $('#worldlore_save_file_btn, #worldlore_delete_file_btn').hide();
+            $('#worldlore_save_file_btn, #worldlore_delete_file_btn, #worldlore_push_editor_file_btn, #worldlore_diff_editor_file_btn').hide();
+        }
+    });
+
+    // --- QUICK ACTION BUTTONS: PUSH & DIFF FROM EDITOR ---
+    $('#worldlore_push_editor_file_btn').on('click', () => {
+        if (!currentSelectedFile) return;
+        const val = $('#worldlore_file_editor').val();
+        writeFile(currentSelectedFile, val);
+        pushDraftFileToStaging(currentSelectedFile);
+    });
+
+    $('#worldlore_diff_editor_file_btn').on('click', () => {
+        if (!currentSelectedFile) return;
+        diffDraftFileWithST(currentSelectedFile);
+    });
+
+    // --- QUICK TOOLBAR BUTTONS: PULL ASSETS & NEW TEMPLATE ---
+    $('#worldlore_quick_pull_lorebook_btn').on('click', async () => {
+        const overview = getLorebooksOverview();
+        const boundPrimary = overview.characterBoundLorebooks[0];
+        const boundExtra = overview.characterBoundLorebooks.slice(1);
+        const chatBound = overview.chatBoundLorebooks || [];
+        const globalActive = overview.globalActiveLorebooks || [];
+        const allAvailable = overview.allAvailableLorebooksInST || [];
+
+        const options = [];
+        const added = new Set();
+
+        if (boundPrimary) {
+            options.push({ value: boundPrimary, label: `★ 角色主绑定: ${boundPrimary}` });
+            added.add(boundPrimary);
+        }
+        for (const b of boundExtra) {
+            if (!added.has(b)) {
+                options.push({ value: b, label: `☆ 角色附加: ${b}` });
+                added.add(b);
+            }
+        }
+        for (const b of chatBound) {
+            if (!added.has(b)) {
+                options.push({ value: b, label: `💬 聊天绑定: ${b}` });
+                added.add(b);
+            }
+        }
+        for (const b of globalActive) {
+            if (!added.has(b)) {
+                options.push({ value: b, label: `🌐 全局常驻: ${b}` });
+                added.add(b);
+            }
+        }
+        for (const b of allAvailable) {
+            if (!added.has(b)) {
+                options.push({ value: b, label: `📖 ${b}` });
+                added.add(b);
+            }
+        }
+
+        if (options.length === 0) {
+            toastr.warning('酒馆中暂无可用的世界书！');
+            return;
+        }
+
+        const selectedBook = await showSelectModal({
+            title: '拉取世界书到工坊',
+            message: '选择要导入的世界书：',
+            options,
+            defaultVal: boundPrimary || options[0].value
+        });
+
+        if (!selectedBook) return;
+
+        try {
+            toastr.info(`正在将世界书《${selectedBook}》导入工作区...`);
+            const res = await importLorebookToWorkspace({ bookName: selectedBook });
+            toastr.success(`已成功导入世界书《${res.bookName}》！生成了 ${res.filesCount} 份独立条目草稿文件。`);
+            refreshWorkspaceUI();
+        } catch (e) {
+            toastr.error(`拉取世界书失败: ${e.message}`);
+        }
+    });
+
+    $('#worldlore_quick_pull_character_btn').on('click', async () => {
+        const char = getCurrentCharacter();
+        if (!char) {
+            toastr.warning('当前未选中任何角色卡！');
+            return;
+        }
+        try {
+            const desc = char.description || char.data?.description || '';
+            const safeName = String(char.name || 'character').replace(/[/\\:*?"<>|]/g, '_').trim();
+            const targetFile = `character/${safeName}/description.md`;
+
+            writeFile(targetFile, desc, 'overwrite');
+            currentSelectedFile = targetFile;
+            refreshWorkspaceUI();
+            loadFileToEditor(targetFile);
+
+            toastr.success(`已拉取角色 [${char.name}] 的 description 设定到 ${targetFile}！`);
+        } catch (e) {
+            toastr.error(`拉取角色设定失败: ${e.message}`);
+        }
+    });
+
+    $('#worldlore_quick_pull_persona_btn').on('click', async () => {
+        try {
+            const persona = getCurrentPersona();
+            const desc = persona?.description || '';
+            const safeName = String(persona?.name || 'default_user').replace(/[/\\:*?"<>|]/g, '_').trim();
+            const targetFile = `persona/${safeName}/description.md`;
+
+            writeFile(targetFile, desc, 'overwrite');
+            currentSelectedFile = targetFile;
+            refreshWorkspaceUI();
+            loadFileToEditor(targetFile);
+
+            toastr.success(`已拉取用户 [${persona?.name || '当前用户'}] 的 description 设定到 ${targetFile}！`);
+        } catch (e) {
+            toastr.error(`拉取用户人设失败: ${e.message}`);
+        }
+    });
+
+    $('#worldlore_quick_pull_regex_btn').on('click', async () => {
+        const scripts = getRegexScripts('all');
+        if (!scripts || scripts.length === 0) {
+            toastr.warning('酒馆中当前未安装任何正则脚本！');
+            return;
+        }
+
+        const options = scripts.map(s => {
+            const scopeLabel = s.scope === 'character' ? '角色专属' : (s.scope === 'preset' ? '预设绑定' : '全局通用');
+            return {
+                value: s.scriptName,
+                label: `${scopeLabel}: ${s.scriptName}`
+            };
+        });
+
+        const scriptName = await showSelectModal({
+            title: '拉取正则脚本到工坊',
+            message: '从酒馆已安装的列表中选择要导入的脚本：',
+            options,
+            defaultVal: options[0]?.value || ''
+        });
+
+        if (!scriptName) return;
+
+        const found = findRegexScript('all', scriptName.trim());
+        if (!found) {
+            toastr.error(`未在酒馆中找到名为 "${scriptName}" 的正则脚本！`);
+            return;
+        }
+
+        const s = found.script;
+        const safeName = String(s.scriptName || 'regex').replace(/[/\\:*?"<>|]/g, '_').trim();
+        const folder = `regex/${safeName}`;
+
+        const meta = {
+            id: s.id,
+            scriptName: s.scriptName,
+            scope: found.scope,
+            findRegex: s.findRegex || '',
+            placement: Array.isArray(s.placement) ? s.placement : [1, 2],
+            disabled: !!s.disabled,
+            markdownOnly: !!s.markdownOnly,
+            promptOnly: !!s.promptOnly,
+            runOnEdit: !!s.runOnEdit,
+            substituteRegex: s.substituteRegex ?? 0,
+            trimStrings: s.trimStrings || []
+        };
+
+        writeFile(`${folder}/meta.json`, JSON.stringify(meta, null, 2), 'overwrite');
+        writeFile(`${folder}/replace.html`, s.replaceString || '', 'overwrite');
+
+        currentSelectedFile = `${folder}/replace.html`;
+        refreshWorkspaceUI();
+        loadFileToEditor(currentSelectedFile);
+
+        toastr.success(`已成功将正则《${s.scriptName}》拆解导入到 ${folder}/！`);
+    });
+
+    $('#worldlore_quick_new_template_btn').on('click', async () => {
+        const templateType = await showSelectModal({
+            title: '新建标准草稿模板',
+            message: '选择要创建的资产模板类型：',
+            options: [
+                { value: 'new_lorebook_project', label: '📚 新建世界书工程' },
+                { value: 'new_lorebook_entry', label: '📄 新建世界书条目模板' },
+                { value: 'new_regex_script', label: '🎨 新建前端美化正则模板' }
+            ],
+            defaultVal: 'new_lorebook_project'
+        });
+
+        if (!templateType) return;
+
+        if (templateType === 'new_lorebook_project') {
+            const char = getCurrentCharacter();
+            const defaultName = char ? `${char.name}_设定集` : '新世界书';
+            const bookNameInput = await Popup.show.input('新建世界书工程', '请输入新世界书名称：', defaultName);
+            if (!bookNameInput || !bookNameInput.trim()) return;
+
+            const safeBookName = bookNameInput.replace(/[/\\:*?"<>|]/g, '_').trim();
+            const folder = `lorebooks/${safeBookName}`;
+
+            const meta = {
+                bookName: safeBookName,
+                scan_depth: 2,
+                token_budget: 2048,
+                recursive: false,
+                createdAt: new Date().toISOString()
+            };
+            writeFile(`${folder}/meta.json`, JSON.stringify(meta, null, 2), 'overwrite');
+
+            const sampleEntryContent = formatFrontmatter({
+                comment: '世界观概况',
+                keys: ['世界观', '背景', '大陆'],
+                secondary_keys: [],
+                constant: true,
+                enabled: true,
+                order: 100,
+                position: 0,
+                depth: 4
+            }, '# 世界观总览\n\n在此输入世界书核心世界观、阵营、地理或历史设定...\n');
+
+            const entryPath = `${folder}/世界观概况.md`;
+            writeFile(entryPath, sampleEntryContent, 'overwrite');
+
+            currentSelectedFile = entryPath;
+            refreshWorkspaceUI();
+            loadFileToEditor(entryPath);
+            toastr.success(`已创建世界书工程: ${folder}/`);
+        } else if (templateType === 'new_lorebook_entry') {
+            const name = await Popup.show.input('新建世界书条目草稿', '输入条目相对路径：', 'lorebooks/default/new_entry.md');
+            if (!name || !name.trim()) return;
+            const path = name.trim().endsWith('.md') ? name.trim() : `${name.trim()}.md`;
+            const defaultComment = path.split('/').pop().replace(/\.md$/i, '');
+            const templateContent = formatFrontmatter({
+                comment: defaultComment,
+                keys: ['触发词1', '触发词2'],
+                secondary_keys: [],
+                constant: false,
+                enabled: true,
+                order: 100,
+                position: 0,
+                depth: 4
+            }, `# ${defaultComment}\n\n在此输入条目设定正文...\n`);
+            writeFile(path, templateContent, 'overwrite');
+            currentSelectedFile = path;
+            refreshWorkspaceUI();
+            loadFileToEditor(path);
+            toastr.success(`已创建世界书条目模板: ${path}`);
+        } else if (templateType === 'new_regex_script') {
+            const name = await Popup.show.input('新建前端正则美化模板', '输入正则脚本名称：', '新美化面板');
+            if (!name || !name.trim()) return;
+            const safeName = name.replace(/[/\\:*?"<>|]/g, '_').trim();
+            const folder = `regex/${safeName}`;
+            const meta = {
+                scriptName: name.trim(),
+                scope: 'character',
+                findRegex: '<status>([\\s\\S]*?)</status>',
+                placement: [1, 2],
+                disabled: false,
+                substituteRegex: 0
+            };
+            const defaultHtml = `<div class="status-panel">\n  <div class="header">状态栏</div>\n  <div class="content">$1</div>\n</div>\n<style>\n.status-panel {\n  background: rgba(0, 0, 0, 0.45);\n  border: 1px solid #38ef7d;\n  border-radius: 8px;\n  padding: 10px;\n  color: #fff;\n}\n</style>`;
+            writeFile(`${folder}/meta.json`, JSON.stringify(meta, null, 2), 'overwrite');
+            writeFile(`${folder}/replace.html`, defaultHtml, 'overwrite');
+            currentSelectedFile = `${folder}/replace.html`;
+            refreshWorkspaceUI();
+            loadFileToEditor(currentSelectedFile);
+            toastr.success(`已创建前端正则模板: ${folder}/`);
         }
     });
 
@@ -553,37 +918,88 @@ function bindEvents() {
     });
 
     $('#worldlore_copy_prompt_btn').on('click', () => {
-        const text = getToolDocumentationPrompt();
+        const text = getToolDocumentationPrompt(true);
         navigator.clipboard.writeText(text).then(() => {
             toastr.success('已复制工具提示词说明到剪贴板！');
         });
     });
 
-    // --- TOOL MODE TOGGLE ---
+    $('#worldlore_copy_macro_btn').on('click', () => {
+        navigator.clipboard.writeText('{{worldlore_tools}}').then(() => {
+            toastr.success('已复制宏标记 {{worldlore_tools}} 到剪贴板！');
+        });
+    });
+
+    // --- TOOL MODE TOGGLE & TOOLS CHECKBOX MANAGER ---
     const renderModeLabel = () => {
         const mode = getSettings().toolMode || 'native';
         const isNative = mode === 'native';
         $('#worldlore_mode_native_btn').toggleClass('active', isNative);
         $('#worldlore_mode_text_btn').toggleClass('active', !isNative);
         $('#worldlore_mode_label').text(isNative
-            ? '原生模式：工具调用走 API 协议'
-            : '文本模式：<agent_action> 标签，零上下文注入');
+            ? '原生模式：工具走原生 API 协议，下方可自定义勾选启用哪些工具'
+            : '文本模式：<agent_action> 标签模式，需复制下方提示词到上下文');
+
+        // 原生模式下彻底隐藏提示词复制区域
+        $('#worldlore_copy_prompt_section').toggle(!isNative);
     };
+
+    // --- PRESET IMPORT BUTTON ---
+    $('#worldlore_import_preset_btn').on('click', async function () {
+        const btn = $(this);
+        if (btn.hasClass('loading')) return;
+
+        btn.addClass('loading').prop('disabled', true);
+        const originalHtml = btn.html();
+        btn.html('<i class="fa-solid fa-spinner fa-spin"></i> <span>正在导入...</span>');
+
+        try {
+            await importBundledPresetToSillyTavern();
+        } catch (e) {
+            console.error('[Worldlore Agent] Error importing preset:', e);
+            toastr.error(`导入预设失败: ${e.message || e}`);
+        } finally {
+            btn.removeClass('loading').prop('disabled', false).html(originalHtml);
+        }
+    });
 
     $('#worldlore_mode_native_btn').on('click', () => {
         setToolMode('native');
         renderModeLabel();
+        renderToolsManagerList();
         toastr.success('已切换至原生 Function Calling 模式');
     });
 
     $('#worldlore_mode_text_btn').on('click', () => {
         setToolMode('text');
         renderModeLabel();
-        toastr.success('已切换至文本标签模式，上下文零注入');
+        renderToolsManagerList();
+        toastr.success('已切换至文本标签模式');
+    });
+
+    $('#worldlore_select_all_tools_btn').on('click', () => {
+        for (const g of TOOL_GROUPS) {
+            for (const t of g.tools) {
+                setToolEnabled(t.name, true);
+            }
+        }
+        renderToolsManagerList();
+        toastr.success('已启用全部 AI 工具');
+    });
+
+    $('#worldlore_deselect_all_tools_btn').on('click', () => {
+        for (const g of TOOL_GROUPS) {
+            for (const t of g.tools) {
+                setToolEnabled(t.name, false);
+            }
+        }
+        renderToolsManagerList();
+        toastr.warning('已禁用全部 AI 工具');
     });
 
     // Init label on load
     renderModeLabel();
+    renderToolsManagerList();
 
     $('#worldlore_apply_all_btn').on('click', async () => {
         const entries = getStagingEntries();
@@ -652,6 +1068,98 @@ export function toggleDrawer(forceState) {
     }
 }
 
+const TOOL_GROUPS = [
+    {
+        title: '世界书与全局知识库',
+        icon: 'fa-book-atlas',
+        tools: [
+            { name: 'st_import_lorebook_to_workspace', label: '导入世界书到工坊' },
+            { name: 'stage_lorebook_entry', label: '发布/删除世界书条目' },
+            { name: 'st_create_and_bind_lorebook', label: '新建世界书并绑定角色卡' },
+            { name: 'st_delete_lorebook', label: '彻底删除世界书并解除绑定' },
+            { name: 'st_read_lorebook', label: '读取世界书条目列表' },
+            { name: 'st_get_lorebooks_overview', label: '查看酒馆世界书全景概况' },
+        ]
+    },
+    {
+        title: '角色卡与用户人设设定',
+        icon: 'fa-user-tag',
+        tools: [
+            { name: 'st_import_character_to_workspace', label: '导入角色卡设定到工作区' },
+            { name: 'stage_character_field', label: '发布角色卡字段修改' },
+            { name: 'st_get_character', label: '读取当前角色卡全部详情' },
+            { name: 'st_import_persona_to_workspace', label: '导入用户人设到工作区' },
+            { name: 'stage_persona_field', label: '发布用户人设描述修改' },
+            { name: 'st_get_persona', label: '读取当前用户 Persona 设定' },
+        ]
+    },
+    {
+        title: '前端美化与正则脚本',
+        icon: 'fa-code',
+        tools: [
+            { name: 'st_import_regex_to_workspace', label: '导入正则拆解为 replace.html' },
+            { name: 'st_install_regex_from_file', label: '从工作区安装部署正则脚本' },
+            { name: 'st_delete_regex_script', label: '删除已安装的正则脚本' },
+            { name: 'st_list_regex_scripts', label: '查看酒馆已安装正则列表' },
+            { name: 'st_test_regex_script', label: '沙盒自测正则替换效果' },
+        ]
+    },
+    {
+        title: '工作区草稿与文件操作',
+        icon: 'fa-folder-tree',
+        tools: [
+            { name: 'workspace_patch', label: '精准局部差量修改草稿' },
+            { name: 'workspace_write', label: '全量写入草稿文件' },
+            { name: 'workspace_read', label: '读取工作区草稿文件' },
+            { name: 'workspace_delete', label: '删除工作区草稿文件' },
+            { name: 'workspace_list', label: '列出工作区文件列表' },
+            { name: 'workspace_search', label: '在工作区搜索设定关键词' },
+        ]
+    }
+];
+
+export function renderToolsManagerList() {
+    const container = $('#worldlore_tools_checkbox_list');
+    if (!container.length) return;
+    container.empty();
+
+    for (const group of TOOL_GROUPS) {
+        const card = $(`
+            <div class="tool-group-card">
+                <div class="tool-group-title">
+                    <i class="fa-solid ${group.icon}"></i>
+                    <span>${group.title}</span>
+                </div>
+                <div class="tool-group-items"></div>
+            </div>
+        `);
+        const itemsContainer = card.find('.tool-group-items');
+
+        for (const item of group.tools) {
+            const enabled = isToolEnabled(item.name);
+            const toolRow = $(`
+                <label class="tool-checkbox-item">
+                    <input type="checkbox" data-tool="${item.name}" ${enabled ? 'checked' : ''} />
+                    <div class="tool-item-info">
+                        <span class="tool-item-name">${item.name}</span>
+                        <span class="tool-item-desc">${item.label}</span>
+                    </div>
+                </label>
+            `);
+
+            toolRow.find('input').on('change', function () {
+                const isChecked = $(this).is(':checked');
+                setToolEnabled(item.name, isChecked);
+                toastr.info(`已${isChecked ? '启用' : '禁用'}工具: ${item.name}`);
+            });
+
+            itemsContainer.append(toolRow);
+        }
+
+        container.append(card);
+    }
+}
+
 function switchTab(tabName) {
     $('.worldlore-tab-btn').removeClass('active');
     $(`.worldlore-tab-btn[data-tab="${tabName}"]`).addClass('active');
@@ -662,7 +1170,10 @@ function switchTab(tabName) {
         if (tabName === 'workspace') refreshWorkspaceUI();
         if (tabName === 'staging') renderStagingList();
         if (tabName === 'history') renderHistoryList();
-        if (tabName === 'guide') updateStats();
+        if (tabName === 'guide') {
+            updateStats();
+            renderToolsManagerList();
+        }
     });
 }
 
@@ -691,6 +1202,212 @@ export function refreshWorkspaceUI() {
     }
 }
 
+export async function pushDraftFileToStaging(path) {
+    if (!path) return;
+    const content = readFile(path);
+    if (content === null) {
+        toastr.error(`未找到草稿文件: ${path}`);
+        return;
+    }
+
+    try {
+        if (path.startsWith('lorebooks/')) {
+            const parts = path.split('/');
+            const bookName = parts[1] || 'default';
+            if (parts.length < 3 || path.endsWith('/meta.json')) {
+                toastr.warning('meta.json 为全书全局配置，请直接推送具体条目的 .md 草稿');
+                return;
+            }
+            const parsed = parseFrontmatter(content);
+            const fmData = parsed.data || {};
+            const entryContent = parsed.content || '';
+            const comment = fmData.comment || parts[parts.length - 1].replace(/\.md$/i, '');
+
+            addStagingEntry({
+                type: 'lorebook',
+                action: 'update',
+                target: bookName,
+                data: {
+                    action: 'update',
+                    comment: comment,
+                    keys: fmData.keys || [],
+                    secondary_keys: fmData.secondary_keys || [],
+                    content: entryContent,
+                    constant: fmData.constant !== undefined ? fmData.constant : true,
+                    enabled: fmData.enabled !== undefined ? fmData.enabled : true,
+                    disable: fmData.enabled === false,
+                    order: fmData.order ?? 100,
+                    position: fmData.position ?? 0,
+                    depth: fmData.depth ?? 4,
+                },
+                summary: `[世界书: ${bookName}] 推送条目 "${comment}" (源于草稿: ${path})`
+            });
+
+            toastr.success(`已推送到审核区: 《${comment}》`);
+            updateStagingCounter();
+        } else if (path.startsWith('character/')) {
+            const parts = path.split('/');
+            const fileName = parts[parts.length - 1] || '';
+            const field = fileName.replace(/\.md$/i, '');
+            const char = getCurrentCharacter();
+            const charName = char ? char.name : (parts[1] || 'Current Character');
+
+            addStagingEntry({
+                type: 'character',
+                action: 'update',
+                target: charName,
+                data: {
+                    [field]: content,
+                    mode: 'replace'
+                },
+                summary: `[角色卡: ${charName}] 更新字段 "${field}" (源于: ${path})`
+            });
+
+            toastr.success(`已推送到审核区: 角色字段 [${field}]`);
+            updateStagingCounter();
+        } else if (path.startsWith('persona/')) {
+            const persona = getCurrentPersona();
+            const personaName = persona ? persona.name : 'Current User';
+
+            addStagingEntry({
+                type: 'persona',
+                action: 'update',
+                target: personaName,
+                data: {
+                    description: content,
+                    mode: 'replace'
+                },
+                summary: `[用户设定: ${personaName}] 更新人设描述 (源于: ${path})`
+            });
+
+            toastr.success(`已推送到审核区: 用户人设描述`);
+            updateStagingCounter();
+        } else if (path.startsWith('regex/')) {
+            const parts = path.split('/');
+            const folder = parts.slice(0, 2).join('/');
+            const metaPath = `${folder}/meta.json`;
+            const htmlPath = `${folder}/replace.html`;
+
+            const metaText = readFile(metaPath);
+            const htmlContent = readFile(htmlPath);
+
+            if (metaText === null || htmlContent === null) {
+                toastr.error(`正则文件夹必须同时包含 replace.html 与 meta.json！`);
+                return;
+            }
+
+            let meta = {};
+            try { meta = JSON.parse(metaText); } catch (e) {
+                toastr.error(`meta.json 解析失败: ${e.message}`);
+                return;
+            }
+
+            const scriptName = meta.scriptName || folder.split('/').pop() || '未命名正则';
+            const targetScope = meta.scope || 'character';
+            const existing = findRegexScript(targetScope, scriptName);
+            const isUpdate = !!existing;
+
+            const completeScript = {
+                id: meta.id,
+                scriptName,
+                findRegex: meta.findRegex || '',
+                replaceString: htmlContent,
+                trimStrings: Array.isArray(meta.trimStrings) ? meta.trimStrings : [],
+                placement: Array.isArray(meta.placement) && meta.placement.length > 0 ? meta.placement : [1, 2],
+                disabled: meta.disabled === true,
+                markdownOnly: meta.markdownOnly === true,
+                promptOnly: meta.promptOnly === true,
+                runOnEdit: meta.runOnEdit === true,
+                substituteRegex: Number(meta.substituteRegex ?? 0),
+                minDepth: meta.minDepth !== undefined && meta.minDepth !== null ? Number(meta.minDepth) : null,
+                maxDepth: meta.maxDepth !== undefined && meta.maxDepth !== null ? Number(meta.maxDepth) : null,
+            };
+
+            addStagingEntry({
+                type: 'regex',
+                action: isUpdate ? 'update' : 'add',
+                target: `${targetScope}:${scriptName}`,
+                data: {
+                    scope: targetScope,
+                    scriptName,
+                    script: completeScript,
+                    from_folder: folder,
+                    replace_existing: true,
+                    beforeScript: existing ? existing.script : null
+                },
+                summary: `[正则脚本: ${targetScope}] ${isUpdate ? '更新' : '新增'} "${scriptName}" (源于: ${folder})`
+            });
+
+            toastr.success(`已推送到审核区: 正则《${scriptName}》`);
+            updateStagingCounter();
+        } else {
+            toastr.info(`普通草稿文件 [${path}]，已保存在工作区，可供提示词引用。`);
+        }
+    } catch (e) {
+        console.error('[Worldlore Agent] pushDraftFileToStaging error:', e);
+        toastr.error(`推送失败: ${e.message}`);
+    }
+}
+
+export async function diffDraftFileWithST(path) {
+    if (!path) return;
+    const content = readFile(path);
+    if (content === null) {
+        toastr.error(`未找到草稿文件: ${path}`);
+        return;
+    }
+
+    try {
+        if (path.startsWith('lorebooks/')) {
+            const parts = path.split('/');
+            const bookName = parts[1] || '';
+            const parsed = parseFrontmatter(content);
+            const comment = parsed.data?.comment || parts[parts.length - 1].replace(/\.md$/i, '');
+            const newText = parsed.content || '';
+
+            const data = await loadWorldInfo(bookName);
+            let oldText = '(酒馆中无此条目 / 尚未在线建立)';
+            if (data && data.entries) {
+                const found = Object.values(data.entries).find(e => e.comment && e.comment.trim().toLowerCase() === comment.trim().toLowerCase());
+                if (found && found.content) oldText = found.content;
+            }
+            showDiffModal(`对比世界书条目: 《${comment}》 (${bookName})`, oldText, newText);
+        } else if (path.startsWith('character/')) {
+            const parts = path.split('/');
+            const field = parts[parts.length - 1].replace(/\.md$/i, '');
+            const char = getCurrentCharacter();
+            const oldText = char ? (char[field] || char.data?.[field] || '') : '(未选定角色卡)';
+            showDiffModal(`对比角色卡字段: [${field}]`, oldText, content);
+        } else if (path.startsWith('persona/')) {
+            const persona = getCurrentPersona();
+            const oldText = persona?.description || '';
+            showDiffModal(`对比用户人设描述`, oldText, content);
+        } else if (path.startsWith('regex/')) {
+            const parts = path.split('/');
+            const folder = parts.slice(0, 2).join('/');
+            const metaText = readFile(`${folder}/meta.json`);
+            const htmlContent = readFile(`${folder}/replace.html`) || '';
+            let scriptName = folder.split('/').pop();
+            let scope = 'all';
+            if (metaText) {
+                try {
+                    const meta = JSON.parse(metaText);
+                    if (meta.scriptName) scriptName = meta.scriptName;
+                    if (meta.scope) scope = meta.scope;
+                } catch (_) {}
+            }
+            const found = findRegexScript(scope, scriptName);
+            const oldText = found?.script?.replaceString || '(酒馆中尚未安装此正则)';
+            showDiffModal(`对比正则前端代码: 《${scriptName}》`, oldText, htmlContent);
+        } else {
+            toastr.info('该草稿为工作区通用文件，暂无对应的酒馆线上实体');
+        }
+    } catch (e) {
+        console.error('[Worldlore Agent] diffDraftFileWithST error:', e);
+        toastr.error(`对比失败: ${e.message}`);
+    }
+}
+
 function renderFileList(query = '') {
     const container = $('#worldlore_file_list');
     container.empty();
@@ -704,11 +1421,21 @@ function renderFileList(query = '') {
     }
 
     for (const file of filtered) {
+        const canPush = (file.path.startsWith('lorebooks/') || file.path.startsWith('character/') || file.path.startsWith('persona/') || file.path.startsWith('regex/')) && !file.path.endsWith('/meta.json') && file.path !== 'meta.json';
+
+        const actionButtonsHtml = canPush ? `
+            <div class="file-item-actions">
+                <button class="file-action-btn quick-push-file-btn fa-solid fa-rocket" title="一键推送到酒馆待确认审核区"></button>
+                <button class="file-action-btn quick-diff-file-btn fa-solid fa-code-compare" title="对比草稿与酒馆线上版本 (Diff)"></button>
+            </div>
+        ` : '';
+
         const item = $(`
             <div class="worldlore-file-item ${currentSelectedFile === file.path ? 'active' : ''}">
                 <i class="fa-solid fa-file-lines file-icon"></i>
                 <span class="file-path">${file.path}</span>
                 <span class="file-size">${file.length}b</span>
+                ${actionButtonsHtml}
             </div>
         `);
 
@@ -718,6 +1445,18 @@ function renderFileList(query = '') {
             item.addClass('active');
             loadFileToEditor(file.path);
         });
+
+        if (canPush) {
+            item.find('.quick-push-file-btn').on('click', (e) => {
+                e.stopPropagation();
+                pushDraftFileToStaging(file.path);
+            });
+
+            item.find('.quick-diff-file-btn').on('click', (e) => {
+                e.stopPropagation();
+                diffDraftFileWithST(file.path);
+            });
+        }
 
         container.append(item);
     }
@@ -729,7 +1468,7 @@ function loadFileToEditor(path) {
         $('#worldlore_editor_filename').text(path);
         $('#worldlore_cur_file_name').text(path);
         $('#worldlore_file_editor').val(content);
-        $('#worldlore_save_file_btn, #worldlore_delete_file_btn').show();
+        $('#worldlore_save_file_btn, #worldlore_delete_file_btn, #worldlore_push_editor_file_btn, #worldlore_diff_editor_file_btn').show();
     }
 }
 
@@ -750,7 +1489,8 @@ export function renderStagingList() {
             lorebook: 'fa-book-atlas',
             character: 'fa-user-tag',
             persona: 'fa-user-pen',
-            workspace: 'fa-file-signature'
+            workspace: 'fa-file-signature',
+            regex: 'fa-code'
         };
 
         const actionBadges = {
@@ -818,7 +1558,11 @@ export function renderStagingList() {
                 const fieldKey = Object.keys(item.data || {})[0] || 'description';
                 const oldText = persona ? (persona[fieldKey] || '(原设定为空)') : '(未选定Persona)';
                 const newText = String(item.data[fieldKey] || '');
-                showDiffModal(`用户设定对比: ${persona?.name || '用户'}.${fieldKey}`, oldText, newText);
+            } else if (item.type === 'regex') {
+                const oldScript = item.data?.beforeScript;
+                const oldText = oldScript ? (oldScript.replaceString || '') : '(ST中暂无此正则脚本，本次为新增)';
+                const newText = item.data?.script?.replaceString || '';
+                showDiffModal(`正则代码对比: [${item.data?.scope || 'character'}] ${item.data?.scriptName || ''}`, oldText, newText);
             } else {
                 showDiffModal(`数据对比: ${item.summary || item.target}`, '', JSON.stringify(item.data, null, 2));
             }
@@ -893,6 +1637,7 @@ export function renderHistoryList() {
             character: 'fa-user-tag',
             persona: 'fa-user-pen',
             workspace: 'fa-file-signature',
+            regex: 'fa-code',
             tool: 'fa-bolt'
         };
 
@@ -928,6 +1673,12 @@ export function renderHistoryList() {
         // Diff action
         if (hasDiff) {
             card.find('.diff-btn').on('click', () => {
+                if (item.type === 'regex') {
+                    const oldCode = item.beforeState?.script?.replaceString || (typeof item.beforeState?.content === 'string' ? item.beforeState.content : '');
+                    const newCode = item.afterState?.script?.replaceString || (typeof item.afterState?.content === 'string' ? item.afterState.content : '');
+                    showDiffModal(`正则快照对比: ${item.summary || item.target}`, oldCode, newCode);
+                    return;
+                }
                 const oldText = typeof item.beforeState?.content === 'string' ? item.beforeState.content : (item.beforeState ? JSON.stringify(item.beforeState, null, 2) : '');
                 const newText = typeof item.afterState?.content === 'string' ? item.afterState.content : (item.afterState ? JSON.stringify(item.afterState, null, 2) : '');
                 showDiffModal(`历史对比: ${item.summary || item.target}`, oldText, newText);
@@ -1032,6 +1783,32 @@ function renderStagingDataDetails(item) {
         const d = item.data;
         const fields = Object.entries(d).map(([k, v]) => `<div><strong>${k}:</strong> <pre class="clean-pre">${escapeHtml(String(v))}</pre></div>`).join('');
         return `<div class="staged-details transparent-box">${fields}</div>`;
+    } else if (item.type === 'regex') {
+        const d = item.data || {};
+        const script = d.script || {};
+        const scopeBadgeMap = {
+            character: '<span class="attribute-pill" style="color:var(--SmartThemeQuoteColor,#a29bfe);"><i class="fa-solid fa-user-tag"></i> 角色专属</span>',
+            global: '<span class="attribute-pill" style="color:#00cec9;"><i class="fa-solid fa-globe"></i> 全局生效</span>',
+            preset: '<span class="attribute-pill" style="color:#fdcb6e;"><i class="fa-solid fa-sliders"></i> 生成预设</span>'
+        };
+        const scopeHtml = scopeBadgeMap[d.scope] || `<span class="attribute-pill">${escapeHtml(d.scope || 'character')}</span>`;
+        const findStr = script.findRegex ? `<code>${escapeHtml(script.findRegex)}</code>` : '<em>(未设置)</em>';
+        const len = (script.replaceString || '').length;
+
+        return `
+            <div class="staged-details transparent-box">
+                <div class="staged-lights-bar">
+                    ${scopeHtml}
+                    <span class="attribute-pill worldlore-nowrap-text" title="触发匹配的正则表达式">
+                        <i class="fa-solid fa-magnifying-glass"></i> 正则: ${findStr}
+                    </span>
+                    <span class="attribute-pill worldlore-nowrap-text" title="HTML替换代码字符数">
+                        <i class="fa-solid fa-file-code"></i> 代码: ${len} 字符
+                    </span>
+                </div>
+                ${d.from_folder ? `<div class="detail-row" style="margin-top:6px;font-size:12px;opacity:0.85;"><i class="fa-regular fa-folder-open"></i> 草稿来源: <code>${escapeHtml(d.from_folder)}</code></div>` : ''}
+            </div>
+        `;
     }
     return `<div class="staged-details transparent-box"><pre class="clean-pre">${escapeHtml(JSON.stringify(item.data, null, 2))}</pre></div>`;
 }

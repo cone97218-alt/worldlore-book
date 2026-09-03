@@ -1,9 +1,9 @@
-import { TOOL_DEFINITIONS } from './tools.js';
-import { getSettings } from './workspace.js';
+import { TOOL_DEFINITIONS } from '../tools/index.js';
+import { getSettings } from '../core/workspace.js';
 import { getContext } from '/scripts/extensions.js';
 import { Generate } from '/script.js';
 import { sendNarratorMessage } from '/scripts/slash-commands.js';
-import { showDiffModal } from './diff.js';
+import { showDiffModal, getStoredDiff } from './diff.js';
 
 const toolsMap = new Map(TOOL_DEFINITIONS.map(t => [t.name, t]));
 
@@ -21,6 +21,17 @@ const TOOL_ALIASES = {
     'delete_file': 'workspace_delete',
     'remove_draft': 'workspace_delete',
     'remove_file': 'workspace_delete',
+    'list_regex_scripts': 'st_list_regex_scripts',
+    'delete_regex_script': 'st_delete_regex_script',
+    'import_regex': 'st_import_regex_to_workspace',
+    'import_regex_script': 'st_import_regex_to_workspace',
+    'import_lorebook': 'st_import_lorebook_to_workspace',
+    'import_worldbook': 'st_import_lorebook_to_workspace',
+    'import_character': 'st_import_character_to_workspace',
+    'import_persona': 'st_import_persona_to_workspace',
+    'install_regex': 'st_install_regex_from_file',
+    'test_regex': 'st_test_regex_script',
+    'test_regex_script': 'st_test_regex_script',
 };
 
 const READ_TOOLS = new Set([
@@ -28,6 +39,12 @@ const READ_TOOLS = new Set([
     'st_get_persona',
     'st_read_lorebook',
     'st_get_lorebooks_overview',
+    'st_list_regex_scripts',
+    'st_test_regex_script',
+    'st_import_lorebook_to_workspace',
+    'st_import_character_to_workspace',
+    'st_import_persona_to_workspace',
+    'st_import_regex_to_workspace',
     'workspace_read',
     'workspace_search',
     'workspace_list'
@@ -123,20 +140,27 @@ function renderExecutionBadge(messageElement, executedList) {
             <span class="badge-status">${item.result.success ? '✓' : '✗'}</span>
         `;
 
-        // If tool result contains a diff (e.g. workspace_patch or workspace_write modification), attach a Diff button
+        // If tool result contains a diff or diff_id (e.g. workspace_patch or workspace_write modification), attach a Diff button
         let parsedResult = null;
         try {
             parsedResult = typeof item.result.result === 'string' ? JSON.parse(item.result.result) : item.result.result;
         } catch (_) {}
 
-        if (parsedResult?.diff) {
+        const diffId = parsedResult?.diff_id;
+        const stored = diffId ? getStoredDiff(diffId) : null;
+        const hasDiff = stored || parsedResult?.diff;
+
+        if (hasDiff) {
             const diffBtn = document.createElement('button');
             diffBtn.className = 'worldlore-badge-feed-btn';
             diffBtn.setAttribute('title', '查看修改对比 (Diff)');
             diffBtn.innerHTML = '<i class="fa-solid fa-code-compare"></i>';
             diffBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                showDiffModal(`修改对比: ${parsedResult.path || item.params.path || '草稿文件'}`, parsedResult.diff.oldText, parsedResult.diff.newText);
+                const oldText = stored?.oldText || parsedResult?.diff?.oldText || '';
+                const newText = stored?.newText || parsedResult?.diff?.newText || '';
+                const title = stored?.title || `修改对比: ${parsedResult.path || item.params.path || '草稿文件'}`;
+                showDiffModal(title, oldText, newText);
             });
             badge.appendChild(diffBtn);
         }
