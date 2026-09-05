@@ -1,5 +1,5 @@
 import { getSettings, saveWorkspace, getProjects, getActiveProjectName, getActiveProject, createProject, switchProject, deleteProject, renameProject, listFiles, readFile, writeFile, deleteFile, renameFile, exportProjectData, importProjectData } from '../core/workspace.js';
-import { getStagingEntries, removeStagingEntry, clearStaging, applyStagingEntry, applyAllStaging, getHistoryEntries, undoHistoryRecord, redoHistoryRecord, restageHistoryRecord, clearHistory, getToolDocumentationPrompt, setToolMode, addStagingEntry, addHistoryRecord, isToolEnabled, setToolEnabled, TOOL_DEFINITIONS } from '../tools/index.js';
+import { getStagingEntries, removeStagingEntry, clearStaging, applyStagingEntry, applyAllStaging, getHistoryEntries, undoHistoryRecord, redoHistoryRecord, restageHistoryRecord, clearHistory, getToolDocumentationPrompt, setToolMode, addStagingEntry, addHistoryRecord, isToolEnabled, setToolEnabled, registerAllToolsWithToolManager, unregisterAllTools, TOOL_DEFINITIONS } from '../tools/index.js';
 import { getAvailableWorldInfos, getCharacterBoundLorebooks, getCurrentCharacter, getCurrentPersona, getLorebooksOverview, readLorebookEntriesScoped } from '../st/st-sync.js';
 import { importLorebookToWorkspace, importCharacterToWorkspace, importPersonaToWorkspace, parseFrontmatter, formatFrontmatter } from '../st/import-sync.js';
 import { getRegexScripts, findRegexScript } from '../st/regex-sync.js';
@@ -261,7 +261,7 @@ function makeDraggableAndDockable(el) {
 }
 
 /**
- * Toggles master extension enabled state and floating ball visibility
+ * Toggles master extension enabled state, floating ball visibility, and tool registrations
  */
 export function toggleExtensionEnabled() {
     const settings = getSettings();
@@ -274,15 +274,23 @@ export function toggleExtensionEnabled() {
     if (next) {
         if (ball) ball.style.display = 'block';
         mountQrDraftButton();
-        toastr.success('已开启 A助手');
+        registerAllToolsWithToolManager();
+        updateStagingCounter();
+        toastr.success('已启用 A助手 扩展');
     } else {
         if (ball) ball.style.display = 'none';
         toggleDrawer(false);
         unmountQrDraftButton();
-        toastr.info('已关闭 A助手');
+        unregisterAllTools();
+        toastr.info('已禁用 A助手 扩展');
     }
 
     updateMenuItemState();
+
+    const masterChk = $('#worldlore_master_enabled_chk');
+    if (masterChk.length) {
+        masterChk.prop('checked', next);
+    }
 }
 
 function updateMenuItemState() {
@@ -291,6 +299,13 @@ function updateMenuItemState() {
     const settings = getSettings();
     const isEnabled = settings.enabled !== false;
     item.classList.toggle('active', isEnabled);
+    item.title = isEnabled ? '点击禁用 A助手 扩展 (当前: 已启用)' : '点击启用 A助手 扩展 (当前: 已禁用)';
+    const statusEl = item.querySelector('.worldlore-menu-status');
+    if (statusEl) {
+        statusEl.textContent = isEnabled ? '已启用' : '已禁用';
+        statusEl.style.backgroundColor = isEnabled ? 'rgba(46, 204, 113, 0.2)' : 'rgba(231, 76, 60, 0.2)';
+        statusEl.style.color = isEnabled ? '#2ecc71' : '#e74c3c';
+    }
 }
 
 function bindMenuButton() {
@@ -300,10 +315,12 @@ function bindMenuButton() {
             const item = document.createElement('div');
             item.id = 'worldlore_menu_item';
             item.className = 'extension_menu_item list-group-item flex-container flexGap5';
-            item.title = '点击开启/关闭 A助手 (悬浮球显示与隐藏)';
             item.innerHTML = `
-                <i class="fa-solid fa-book-atlas"></i>
-                <span class="worldlore-nowrap-text">A助手</span>
+                <div style="display:flex; align-items:center; gap:6px; flex:1;">
+                    <i class="fa-solid fa-book-atlas"></i>
+                    <span class="worldlore-nowrap-text">A助手</span>
+                </div>
+                <span class="worldlore-menu-status" style="margin-left:auto; font-size:10px; padding:1px 6px; border-radius:4px; font-weight:600;"></span>
             `;
             item.addEventListener('click', () => {
                 toggleExtensionEnabled();
@@ -705,6 +722,15 @@ function createDrawer() {
                         <span class="worldlore-nowrap-text">A助手 扩展设置</span>
                     </div>
 
+                    <!-- EXTENSION MASTER SWITCH -->
+                    <div class="worldlore-setting-row" style="display:flex !important; flex-direction:row !important; align-items:center !important; justify-content:space-between !important; margin:6px 0 10px 0 !important; padding:8px 12px !important; background:var(--wl-bg-sub) !important; border:1px solid var(--wl-border) !important; border-radius:6px !important; box-sizing:border-box !important;">
+                        <div style="display:flex; flex-direction:column; gap:2px;">
+                            <span class="worldlore-nowrap-text" style="font-size:12px; font-weight:600;">扩展总开关</span>
+                            <span style="font-size:10px; opacity:0.75;">全局启用或禁用 A助手 扩展（关闭时禁用悬浮球、工具调用与快捷引用栏）</span>
+                        </div>
+                        <input type="checkbox" id="worldlore_master_enabled_chk" style="cursor:pointer; width:16px; height:16px; accent-color:var(--wl-accent);" />
+                    </div>
+
                     <!-- MOBILE GESTURE & INTERACTION SETTING -->
                     <div class="worldlore-setting-row" style="display:flex !important; flex-direction:row !important; align-items:center !important; justify-content:space-between !important; margin:6px 0 10px 0 !important; padding:8px 12px !important; background:var(--wl-bg-sub) !important; border:1px solid var(--wl-border) !important; border-radius:6px !important; box-sizing:border-box !important;">
                         <div style="display:flex; flex-direction:column; gap:2px;">
@@ -778,8 +804,20 @@ function bindEvents() {
     $('#worldlore_drawer_close').on('click', () => toggleDrawer(false));
     $('#worldlore_theme_btn').on('click', cycleTheme);
 
-    // --- MOBILE TOUCH SWIPE TO CLOSE DRAWER ---
+    // --- EXTENSION MASTER SWITCH ---
     const currentSettings = getSettings();
+    const masterChk = $('#worldlore_master_enabled_chk');
+    if (masterChk.length) {
+        masterChk.prop('checked', currentSettings.enabled !== false);
+        masterChk.on('change', function () {
+            const isChecked = $(this).is(':checked');
+            if (isChecked !== (getSettings().enabled !== false)) {
+                toggleExtensionEnabled();
+            }
+        });
+    }
+
+    // --- MOBILE TOUCH SWIPE TO CLOSE DRAWER ---
     const swipeChk = $('#worldlore_swipe_to_close_chk');
     if (swipeChk.length) {
         swipeChk.prop('checked', currentSettings.ui?.swipeToClose !== false);
@@ -2831,6 +2869,7 @@ function initQrDraftPicker() {
     if (eventSource && event_types?.MESSAGE_SENT) {
         eventSource.on(event_types.MESSAGE_SENT, () => {
             const settings = getSettings();
+            if (settings.enabled === false) return;
             if (settings.retainDraftReference && settings.lastInjectedReference) {
                 setTimeout(() => {
                     const ta = document.getElementById('send_textarea');

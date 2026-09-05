@@ -6,6 +6,7 @@ import { parseAndExecuteActions } from './src/utils/parser.js';
 import { initUI, updateStagingCounter } from './src/ui/ui.js';
 import { initPromptInjector } from './src/utils/injector.js';
 import { initPromptSanitizer } from './src/utils/sanitizer.js';
+import { getSettings } from './src/core/workspace.js';
 
 jQuery(async () => {
     console.log('[Worldlore Agent] Initializing extension A助手...');
@@ -20,9 +21,13 @@ jQuery(async () => {
     try {
         if (typeof MacrosParser !== 'undefined' && typeof MacrosParser.registerMacro === 'function') {
             MacrosParser.registerMacro('worldlore_tools', () => {
+                const settings = getSettings();
+                if (settings.enabled === false) return '';
                 return getTextModeToolsPrompt();
             }, 'A助手当前运行模式下的工具列表与调用格式');
             MacrosParser.registerMacro('worldlore_agent_tools', () => {
+                const settings = getSettings();
+                if (settings.enabled === false) return '';
                 return getTextModeToolsPrompt();
             }, 'A助手当前运行模式下的工具列表与调用格式');
             console.log('[Worldlore Agent] Registered global macro {{worldlore_tools}}');
@@ -40,6 +45,9 @@ jQuery(async () => {
     // 3. Listen to message rendering to support Dual-Mode parsing (Text/Tag fallback for DeepSeek, etc.)
     eventSource.on(event_types.CHARACTER_MESSAGE_RENDERED, async (messageId) => {
         try {
+            const settings = getSettings();
+            if (settings.enabled === false) return;
+
             const context = getContext();
             const message = context.chat[messageId];
             if (!message || message.is_user) return;

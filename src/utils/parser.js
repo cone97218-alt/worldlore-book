@@ -130,6 +130,12 @@ export async function parseAndExecuteActions(text, messageElement) {
 }
 
 export async function executeToolByName(name, args) {
+    const settings = getSettings();
+    if (settings.enabled === false) {
+        console.warn(`[Worldlore Agent] Extension is disabled. Skipping execution of "${name}".`);
+        return { success: false, error: 'A助手扩展当前处于禁用状态。' };
+    }
+
     const resolvedName = TOOL_ALIASES[name] || name;
     const tool = toolsMap.get(resolvedName);
     if (!tool) {

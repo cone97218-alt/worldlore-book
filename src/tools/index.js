@@ -1487,6 +1487,7 @@ export const TOOL_DEFINITIONS = [
 
 export function isToolEnabled(toolName) {
     const settings = getSettings();
+    if (settings.enabled === false) return false;
     if (!settings.enabledTools) return true;
     return settings.enabledTools[toolName] !== false;
 }
@@ -1497,7 +1498,7 @@ export function setToolEnabled(toolName, enabled) {
     settings.enabledTools[toolName] = !!enabled;
     saveWorkspace();
 
-    if (settings.toolMode === 'native' && ToolManager) {
+    if (settings.enabled !== false && settings.toolMode === 'native' && ToolManager) {
         if (enabled) {
             const tool = TOOL_DEFINITIONS.find(t => t.name === toolName);
             if (tool && typeof ToolManager.registerFunctionTool === 'function') {
@@ -1507,7 +1508,13 @@ export function setToolEnabled(toolName, enabled) {
                         displayName: tool.displayName,
                         description: tool.description,
                         parameters: tool.parameters,
-                        action: tool.action,
+                        action: async (args) => {
+                            const currentSettings = getSettings();
+                            if (currentSettings.enabled === false) {
+                                throw new Error('A助手扩展当前已被禁用。');
+                            }
+                            return await tool.action(args);
+                        },
                     });
                 } catch (e) {
                     console.warn(`[Worldlore Agent] Could not register tool ${tool.name}:`, e);
@@ -1523,6 +1530,10 @@ export function setToolEnabled(toolName, enabled) {
 
 export function registerAllToolsWithToolManager() {
     const settings = getSettings();
+    if (settings.enabled === false) {
+        unregisterAllTools();
+        return;
+    }
     if (settings.toolMode !== 'native') return; // text mode: do not register with ToolManager
     if (ToolManager && typeof ToolManager.registerFunctionTool === 'function') {
         for (const tool of TOOL_DEFINITIONS) {
@@ -1536,7 +1547,13 @@ export function registerAllToolsWithToolManager() {
                     displayName: tool.displayName,
                     description: tool.description,
                     parameters: tool.parameters,
-                    action: tool.action,
+                    action: async (args) => {
+                        const currentSettings = getSettings();
+                        if (currentSettings.enabled === false) {
+                            throw new Error('A助手扩展当前已被禁用。');
+                        }
+                        return await tool.action(args);
+                    },
                 });
             } catch (e) {
                 console.warn(`[Worldlore Agent] Could not register tool ${tool.name} with ToolManager:`, e);

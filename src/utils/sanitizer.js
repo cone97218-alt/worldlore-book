@@ -15,6 +15,7 @@ export function initPromptSanitizer() {
         try {
             if (!eventData || !Array.isArray(eventData.chat)) return;
             const settings = getSettings();
+            if (settings.enabled === false) return;
 
             // Default enabled. Can be toggled in settings.sanitizeHistoricalTools
             if (settings.sanitizeHistoricalTools === false) return;
